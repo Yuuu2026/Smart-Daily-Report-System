@@ -6,3 +6,8 @@
 发布后点击查看采集归档，可以看到系统自动提取github最新的修改，可以通过左上角的时间筛选
 可以通过点击链接直接跳转到github本次修改的网页
 每个账号登录点击立即提取后，在采集归档内会显示该账号的用户名，避免分工责任混乱
+<img width="2549" height="1403" alt="登录界面 " src="https://github.com/user-attachments/assets/080458aa-3544-462b-aee0-a229924f9905" />
+<img width="2549" height="1403" alt="仓库选择界面" src="https://github.com/user-attachments/assets/8578fb46-cfc6-48a9-9640-932168da2621" />
+<img width="2549" height="1403" alt="提交界面" src="https://github.com/user-attachments/assets/93fa9eb9-a657-41e4-bd90-26cc1ac81a6f" />
+<img width="2549" height="1403" alt="汇总日报界面" src="https://github.com/user-attachments/assets/e1d6ae9a-8876-4fb7-b520-f11720ef7245" />
+
