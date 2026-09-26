@@ -9,6 +9,7 @@ import secrets
 import sqlite3
 import sys
 from pathlib import Path
+from urllib.parse import urlencode
 
 from flask import Flask, Response, flash, redirect, render_template, request, session, url_for
 
@@ -18,7 +19,11 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from web.app import DATABASE_PATH, database_connection, initialize_database
 from web.audit import log_audit
-from web.github_source import GitHubSourceError, collect_last_24_hours, load_config
+from web.github_source import (
+    GitHubSourceError,
+    collect_last_24_hours,
+    validate_repository,
+)
 from web.publisher_auth import hash_password, verify_password
 
 
@@ -57,18 +62,50 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
     def home():
         if "user_id" not in session:
             return redirect(url_for("login"))
+        selected_repository = session.get("selected_repository")
+        if not selected_repository:
+            return redirect(url_for("select_repository"))
         return render_template(
             "publish.html",
             display_name=session["display_name"],
             today=datetime.date.today().isoformat(),
-            github_repository=_github_repository(),
+            github_repository=selected_repository,
+            archive_url=(
+                "http://127.0.0.1:5000/archive?"
+                + urlencode({"repository": selected_repository})
+            ),
         )
 
-    def _github_repository():
-        try:
-            return load_config()["repository"]
-        except GitHubSourceError:
-            return ""
+    @app.route("/repository", methods=["GET", "POST"])
+    def select_repository():
+        if "user_id" not in session:
+            return redirect(url_for("login"))
+        if request.method == "POST":
+            if not csrf_valid():
+                flash("页面已过期，请刷新后重试。", "error")
+                return render_template(
+                    "repository.html",
+                    current_repository=session.get("selected_repository", ""),
+                ), 400
+            entered_repository = request.form.get("repository", "").strip()
+            try:
+                selected_repository = validate_repository(entered_repository)
+            except GitHubSourceError as error:
+                flash(f"仓库不可用：{error}", "error")
+                return render_template(
+                    "repository.html",
+                    current_repository=entered_repository,
+                ), 400
+            session["selected_repository"] = selected_repository
+            archive_url = (
+                "http://127.0.0.1:5000/archive?"
+                + urlencode({"repository": selected_repository})
+            )
+            return redirect(archive_url)
+        return render_template(
+            "repository.html",
+            current_repository=session.get("selected_repository", ""),
+        )
 
     @app.route("/login", methods=["GET", "POST"])
     def login():
@@ -191,6 +228,8 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
     def publish():
         if "user_id" not in session:
             return redirect(url_for("login"))
+        if not session.get("selected_repository"):
+            return redirect(url_for("select_repository"))
         if not csrf_valid():
             flash("页面已过期，请刷新后重试。", "error")
             return redirect(url_for("home"))
@@ -242,14 +281,17 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
         if not csrf_valid():
             flash("页面已过期，请刷新后重试。", "error")
             return redirect(url_for("home"))
+        selected_repository = session.get("selected_repository")
+        if not selected_repository:
+            return redirect(url_for("select_repository"))
 
         started = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
-        repository = _github_repository() or "未配置"
+        repository = selected_repository
         actor_id = session["user_id"]
         actor_name = session["display_name"]
         actor_username = session["username"]
         try:
-            repository, commits = collect_last_24_hours()
+            repository, commits = collect_last_24_hours(repository=selected_repository)
             completed = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
             with database_connection(app.config["DATABASE_PATH"]) as connection:
                 for commit in commits:

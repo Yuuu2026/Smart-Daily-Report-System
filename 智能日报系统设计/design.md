@@ -14,9 +14,9 @@
 
 当前已实现：
 
-    登录分享页 → GitHub REST API → SQLite
+    登录 → 选择并验证仓库 → 分享页 → GitHub REST API → SQLite
     成员发布页 ────────────→ SQLite
-    SQLite → 采集归档页（按日期、成员显示）
+    SQLite → 采集归档页（按仓库、日期、成员显示）
 
 模块采用单体应用，不拆微服务。当前系统面向小团队和本机使用；按 PDF 的 5–15 人规模，模块边界比分布式部署更重要。
 
@@ -24,8 +24,8 @@
 
 | 模块 | 职责 | 当前状态 |
 |---|---|---|
-| 发布系统，5001 | 注册、登录、发布进展；登录后触发 GitHub 提取 | 已实现 |
-| 信息采集系统，5000 | 按日期读取成员发布和 GitHub 提交 | 已实现 |
+| 发布系统，5001 | 注册、登录；每次登录选择仓库，验证后先进入该仓库归档 | 已实现 |
+| 信息采集系统，5000 | 按日期读取成员发布；GitHub 提交可再按仓库筛选 | 已实现 |
 | GitHub 适配器 | 调 API、分页、重试，将提交详情转换为内部字段 | 已实现 |
 | 飞书/Jira 适配器 | 获取任务变更和群聊消息 | 待实现 |
 | 日报生成器 | 按成员整理提交、任务和协作记录，生成 Markdown/HTML | 待实现完整 PDF 目标 |
@@ -48,7 +48,8 @@
 
 ### 4.2 模块接口
 
-    github.collect(repositories, since, until) -> CommitRecord 列表
+    github.validate_repository(repository) -> 可访问的规范仓库名
+    github.collect(repository, since, until) -> CommitRecord 列表
     lark_tasks.collect(project_id, since, until) -> TaskRecord 列表
     lark_messages.collect(chat_id, keywords, since, until) -> MessageRecord 列表
     generator.generate(members, date, team_name) -> DailyReport
@@ -62,6 +63,7 @@
 - 报告日期和成员工作日按本地业务时区确定；当前 Windows 环境为北京时间。
 - PDF 的默认采集窗口为当天 00:00 至任务执行时间；当前 GitHub 手动提取窗口为最近 24 小时。
 - GitHub 提交以仓库和 SHA 作为唯一键，重复提取执行更新，不重复插入。
+- 当前 GitHub 仓库保存在登录会话中；重新登录必须重新输入并验证仓库。仓库权限由服务端配置的 GitHub Token 决定，不与个人 GitHub 账号做 OAuth 绑定。
 - 成员发布按用户选择的工作日期归档。
 - SQLite 当前保存账号、发布信息、GitHub 提交、同步结果及历史功能数据。PDF 目标中的 SQLite 主要用于日报历史。
 - 目标部署为 Python 3.11+、公司内网 Docker；当前应用只监听本机回环地址，尚未完成该部署。
@@ -90,10 +92,11 @@
 
 | 系统 | 页面/接口 | 用途 |
 |---|---|---|
-| 发布系统 | GET /、/login、/register | 登录后分享工作进展；首页含 GitHub 提取入口 |
+| 发布系统 | GET /、/login、/register | 登录后必须选择仓库，再进入该仓库归档 |
+| 发布系统 | GET/POST /repository | 输入仓库地址并验证仓库访问权限；选择仅在当前会话有效，成功后跳转该仓库归档 |
 | 发布系统 | POST /publish | 保存成员发布内容 |
-| 发布系统 | POST /github/sync | 登录后手动提取最近 24 小时 GitHub 提交 |
-| 采集系统 | GET /archive?date=YYYY-MM-DD | 按日期查看成员发布和 GitHub 提交 |
+| 发布系统 | POST /github/sync | 从当前会话所选仓库提取最近 24 小时提交 |
+| 采集系统 | GET /archive?date=YYYY-MM-DD&repository=owner/repo | 按日期和仓库查看成员发布和对应 GitHub 提交 |
 | GitHub | commits 列表与单条详情 REST API | 获取提交列表和文件变更统计 |
 
 当前页面和代码以 proposal.md 的“当前实现与差距”为准；尚未实现的模块不作为现有接口承诺。

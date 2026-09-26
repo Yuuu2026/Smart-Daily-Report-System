@@ -17,6 +17,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from flask import Flask, Response, jsonify, redirect, render_template, request, url_for
 from web.audit import log_audit
+from web.github_source import GitHubSourceError, normalize_repository
 from report_core import (
     CATEGORY_ORDER,
     RECORD_FIELDS,
@@ -409,6 +410,14 @@ def create_app(database_path=DATABASE_PATH):
             work_date = _work_date(request.args.get("date"))
         except ValueError as error:
             return Response(str(error), status=400, content_type="text/plain; charset=utf-8")
+        repository = request.args.get("repository", "").strip()
+        if repository:
+            try:
+                repository = normalize_repository(repository)
+            except GitHubSourceError as error:
+                return Response(str(error), status=400, content_type="text/plain; charset=utf-8")
+        else:
+            repository = ""
         with database_connection(app.config["DATABASE_PATH"]) as connection:
             items = connection.execute(
                 """SELECT p.id, p.work_date, p.title, p.content, p.source_url, p.created_at,
@@ -419,14 +428,24 @@ def create_app(database_path=DATABASE_PATH):
                    ORDER BY p.created_at DESC, p.id DESC""",
                 (work_date,),
             ).fetchall()
-            github_items = connection.execute(
-                """SELECT id, work_date, message, additions, deletions, changed_files,
-                          commit_url, committed_at_utc, member_name AS member,
-                          synced_by_username
-                   FROM github_commits WHERE work_date = ?
-                   ORDER BY committed_at_utc DESC, id DESC""",
-                (work_date,),
-            ).fetchall()
+            if repository:
+                github_items = connection.execute(
+                    """SELECT id, work_date, message, additions, deletions, changed_files,
+                              commit_url, committed_at_utc, member_name AS member,
+                              synced_by_username
+                       FROM github_commits WHERE work_date = ? AND repository = ?
+                       ORDER BY committed_at_utc DESC, id DESC""",
+                    (work_date, repository),
+                ).fetchall()
+            else:
+                github_items = connection.execute(
+                    """SELECT id, work_date, message, additions, deletions, changed_files,
+                              commit_url, committed_at_utc, member_name AS member,
+                              synced_by_username
+                       FROM github_commits WHERE work_date = ?
+                       ORDER BY committed_at_utc DESC, id DESC""",
+                    (work_date,),
+                ).fetchall()
         grouped = {}
         for item in items:
             item = dict(item)
@@ -454,6 +473,7 @@ def create_app(database_path=DATABASE_PATH):
         return render_template(
             "archive.html",
             work_date=work_date,
+            repository=repository,
             groups=grouped,
             item_count=len(items) + len(github_items),
         )

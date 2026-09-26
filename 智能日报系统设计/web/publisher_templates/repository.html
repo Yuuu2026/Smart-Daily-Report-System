@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>选择 GitHub 仓库</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css', v=3) }}">
+</head>
+<body>
+  <main class="page-shell auth-shell">
+    <nav class="app-nav" aria-label="主导航">
+      <a class="app-brand" href="{{ url_for('home') }}"><span class="brand-mark">W</span><span>工作日志</span></a>
+      <form method="post" action="{{ url_for('logout') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="button-quiet" type="submit">退出</button>
+      </form>
+    </nav>
+    <header class="page-header">
+      <p class="eyebrow">CHOOSE A REPOSITORY</p>
+      <h1>选择 GitHub 仓库</h1>
+      <p class="intro">每次登录后先选择一个仓库。验证通过后，提取和归档都会使用该仓库。</p>
+    </header>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for category, message in messages %}<p class="flash is-{{ category }}">{{ message }}</p>{% endfor %}
+    {% endwith %}
+    <form class="publisher-card publisher-form" method="post" action="{{ url_for('select_repository') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label for="repository">GitHub 仓库地址</label>
+      <input id="repository" name="repository" type="text" value="{{ current_repository }}" placeholder="https://github.com/owner/repository" autocomplete="url" required autofocus>
+      <small>可填写 GitHub 仓库网址，也可填写 owner/repository。系统会检查当前凭据是否可访问。</small>
+      <button type="submit">验证并进入</button>
+    </form>
+  </main>
+</body>
+</html>

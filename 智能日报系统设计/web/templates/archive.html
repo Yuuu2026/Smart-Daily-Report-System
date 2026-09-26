@@ -17,7 +17,11 @@
       <div>
         <p class="eyebrow">TEAM ARCHIVE</p>
         <h1>成员信息归档</h1>
-        <p class="intro">成员发布后自动归档；GitHub 提交在登录后的分享工作进展页提取。</p>
+        {% if repository %}
+          <p class="intro">当前 GitHub 仓库：<strong>{{ repository }}</strong>。下方 GitHub 提交仅显示此仓库。</p>
+        {% else %}
+          <p class="intro">成员发布后自动归档；GitHub 提交在登录后的分享工作进展页提取。</p>
+        {% endif %}
       </div>
       <div class="archive-date-mark" aria-hidden="true">归档<br>按日</div>
     </header>
@@ -26,6 +30,7 @@
       <form class="archive-date-form" action="{{ url_for('archive_page') }}" method="get">
         <label for="archive-date">查看日期</label>
         <input id="archive-date" name="date" type="date" value="{{ work_date }}" required>
+        {% if repository %}<input type="hidden" name="repository" value="{{ repository }}">{% endif %}
         <button type="submit">查看归档</button>
       </form>
       <div class="archive-count"><strong>{{ item_count }}</strong><span>条信息</span></div>

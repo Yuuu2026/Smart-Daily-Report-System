@@ -32,7 +32,7 @@ def load_config(config_path=DEFAULT_CONFIG_PATH):
     repository = config.get("repository", "")
     if not isinstance(repository, str):
         raise GitHubSourceError("GitHub 仓库配置无效。")
-    config["repository"] = normalize_repository(repository)
+    config["repository"] = normalize_repository(repository) if repository.strip() else ""
     members = config.get("members", {})
     if not isinstance(members, dict):
         raise GitHubSourceError("GitHub 成员映射必须是对象。")
@@ -53,6 +53,22 @@ def normalize_repository(value):
     if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", value):
         raise GitHubSourceError("GitHub 仓库格式应为 owner/repo。")
     return value
+
+
+def _configured_token():
+    return os.environ.get("DAILY_REPORT_GITHUB_TOKEN", "").strip() or None
+
+
+def validate_repository(value):
+    """检查仓库地址格式及当前 GitHub 凭据的访问权限。"""
+    repository = normalize_repository(value)
+    owner, repo = repository.split("/", 1)
+    url = f"{API_ROOT}/repos/{quote(owner, safe='')}/{quote(repo, safe='')}"
+    result, _ = _request_json(url, _configured_token())
+    canonical_name = result.get("full_name") if isinstance(result, dict) else None
+    if not canonical_name:
+        raise GitHubSourceError("GitHub 返回的仓库信息无法识别。")
+    return normalize_repository(canonical_name)
 
 
 def _retry_delay(error, attempt):
@@ -178,12 +194,14 @@ def collect_commits(repository, since, until, members=None, token=None):
     return results
 
 
-def collect_last_24_hours(config_path=DEFAULT_CONFIG_PATH):
+def collect_last_24_hours(config_path=DEFAULT_CONFIG_PATH, repository=None):
     config = load_config(config_path)
+    repository = normalize_repository(repository) if repository else config["repository"]
+    if not repository:
+        raise GitHubSourceError("请先选择 GitHub 仓库。")
     now = datetime.datetime.now(datetime.timezone.utc)
-    token = os.environ.get("DAILY_REPORT_GITHUB_TOKEN", "").strip() or None
     commits = collect_commits(
-        config["repository"], now - datetime.timedelta(hours=24), now,
-        members=config["members"], token=token,
+        repository, now - datetime.timedelta(hours=24), now,
+        members=config["members"], token=_configured_token(),
     )
-    return config["repository"], commits
+    return repository, commits
