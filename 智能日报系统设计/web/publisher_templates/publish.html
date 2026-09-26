@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>发布工作信息</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css', v=2) }}">
+</head>
+<body>
+  <main class="page-shell publisher-shell">
+    <nav class="app-nav" aria-label="主导航">
+      <a class="app-brand" href="{{ url_for('home') }}"><span class="brand-mark">W</span><span>工作日志</span></a>
+      <a class="nav-secondary" href="http://127.0.0.1:5000/archive">查看归档 <span aria-hidden="true">↗</span></a>
+    </nav>
+    <header class="publisher-hero">
+      <div><p class="eyebrow">MEMBER UPDATE</p><h1>分享工作进展</h1><p class="intro">你好，{{ display_name }}。发布后会自动归档到所选日期。</p></div>
+      <form method="post" action="{{ url_for('logout') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="button-quiet" type="submit">退出</button></form>
+    </header>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for category, message in messages %}<p class="flash is-{{ category }}">{{ message }}</p>{% endfor %}
+    {% endwith %}
+    <section class="github-sync-panel publish-github-panel" aria-label="提取 GitHub 工作进展">
+      <div>
+        <strong>从 GitHub 提取工作进展</strong>
+        <p>{% if github_repository %}{{ github_repository }} · 最近 24 小时{% else %}仓库尚未配置{% endif %}</p>
+      </div>
+      <div class="github-sync-actions">
+        <form action="{{ url_for('sync_github') }}" method="post">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" {% if not github_repository %}disabled{% endif %}>立即提取</button>
+        </form>
+        <a class="nav-secondary" href="http://127.0.0.1:5000/archive">查看采集归档 ↗</a>
+      </div>
+    </section>
+    <form class="publisher-card publisher-form publish-form" method="post" action="{{ url_for('publish') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="publish-date-row"><label for="work-date">归档日期</label><input id="work-date" type="date" name="work_date" value="{{ today }}" required><span>信息将归入这一天</span></div>
+      <label>标题<input name="title" maxlength="200" placeholder="用一句话概括今天的工作" required></label>
+      <label>工作内容<textarea name="content" rows="8" placeholder="写下完成了什么、目前进展或需要协作的事项" required></textarea></label>
+      <label>相关链接 <span class="optional-label">可选</span><input type="url" name="source_url" placeholder="https://..."></label>
+      <div class="publish-submit-row"><p>发布内容会显示在团队归档中</p><button type="submit">发布信息 <span aria-hidden="true">→</span></button></div>
+    </form>
+  </main>
+</body>
+</html>

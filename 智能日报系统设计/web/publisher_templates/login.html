@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>信息发布系统 · 登录</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css', v=2) }}">
+</head>
+<body>
+  <main class="page-shell auth-shell">
+    <nav class="app-nav" aria-label="主导航"><a class="app-brand" href="http://127.0.0.1:5000/archive"><span class="brand-mark">W</span><span>工作日志</span></a><a class="nav-secondary" href="http://127.0.0.1:5000/archive">团队归档</a></nav>
+    <header class="page-header">
+      <p class="eyebrow">MEMBER UPDATE</p>
+      <h1>登录后发布进展</h1>
+      <p class="intro">发布的信息会按工作日期自动归档，方便团队查阅。</p>
+    </header>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for category, message in messages %}<p class="flash is-{{ category }}">{{ message }}</p>{% endfor %}
+    {% endwith %}
+    <form class="publisher-card publisher-form" method="post" action="{{ url_for('login') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label>用户名<input name="username" autocomplete="username" required autofocus></label>
+      <label>密码<input type="password" name="password" autocomplete="current-password" required></label>
+      <button type="submit">登录</button>
+    </form>
+    <p class="publisher-footnote">还没有账号？<a href="{{ url_for('register') }}">创建账号</a></p>
+  </main>
+</body>
+</html>

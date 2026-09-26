@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>成员信息归档 · {{ work_date }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css', v=3) }}">
+</head>
+<body>
+  <main class="page-shell archive-shell">
+    <nav class="app-nav" aria-label="主导航">
+      <a class="app-brand" href="{{ url_for('archive_page') }}"><span class="brand-mark">W</span><span>工作日志</span></a>
+      <a class="nav-primary" href="http://127.0.0.1:5001/">成员发布 <span aria-hidden="true">↗</span></a>
+    </nav>
+
+    <header class="archive-hero">
+      <div>
+        <p class="eyebrow">TEAM ARCHIVE</p>
+        <h1>成员信息归档</h1>
+        <p class="intro">成员发布后自动归档；GitHub 提交在登录后的分享工作进展页提取。</p>
+      </div>
+      <div class="archive-date-mark" aria-hidden="true">归档<br>按日</div>
+    </header>
+
+    <section class="archive-toolbar" aria-label="按日期查看归档">
+      <form class="archive-date-form" action="{{ url_for('archive_page') }}" method="get">
+        <label for="archive-date">查看日期</label>
+        <input id="archive-date" name="date" type="date" value="{{ work_date }}" required>
+        <button type="submit">查看归档</button>
+      </form>
+      <div class="archive-count"><strong>{{ item_count }}</strong><span>条信息</span></div>
+    </section>
+
+    {% if groups %}
+      <div class="archive-groups">
+        {% for member, items in groups|dictsort %}
+          <section class="member-group" aria-label="{{ member }} 发布的信息">
+            <header class="member-heading">
+              <span class="member-avatar">{{ member[:1] }}</span>
+              <h2>{{ member }}</h2>
+              <span class="member-count">{{ items|length }} 条</span>
+            </header>
+            <div class="archive-items">
+              {% for item in items %}
+                <article class="archive-item">
+                  <div class="archive-item-top"><div class="archive-title-line"><h3>{{ item.title }}</h3><span class="source-badge">{{ item.source_type }}</span></div><time datetime="{{ item.created_at }}">{{ item.local_created_at }} 本地时间</time></div>
+                  {% if item.source_type == 'GitHub 提交' %}<p class="archive-attribution">提取账号（登录名）：{{ item.synced_by_username or '历史记录未保存' }}</p>{% endif %}
+                  <p class="archive-content">{{ item.content }}</p>
+                  {% if item.source_url %}<a class="source-link" href="{{ item.source_url }}" target="_blank" rel="noopener noreferrer">查看相关链接 <span aria-hidden="true">↗</span></a>{% endif %}
+                </article>
+              {% endfor %}
+            </div>
+          </section>
+        {% endfor %}
+      </div>
+    {% else %}
+      <section class="archive-empty">
+        <span class="empty-mark" aria-hidden="true">＋</span>
+        <h2>这一天还没有信息</h2>
+        <p>成员发布后会自动归档；GitHub 提交可在登录后的分享工作进展页提取。</p>
+        <a class="button-link" href="http://127.0.0.1:5001/">去发布信息 <span aria-hidden="true">→</span></a>
+      </section>
+    {% endif %}
+
+    <footer class="page-footer">成员发布内容按选择日期归档；GitHub 提交按北京时间提交日期归档</footer>
+  </main>
+</body>
+</html>

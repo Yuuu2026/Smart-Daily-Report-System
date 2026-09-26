@@ -1,0 +1,12 @@
+{
+  "commits": [
+    {"member": "张三", "repo": "日报系统", "message": "完成日报生成逻辑"}
+  ],
+  "tasks": [
+    {"member": "张三", "task": "写 proposal", "progress": "已完成"},
+    {"member": "李四", "task": "设计数据结构", "progress": "进行中"}
+  ],
+  "collaborations": [
+    {"member": "李四", "channel": "飞书群", "summary": "确认日报字段"}
+  ]
+}
