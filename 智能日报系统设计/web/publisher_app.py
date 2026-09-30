@@ -3,13 +3,13 @@
 import argparse
 import datetime
 import hmac
+import math
 import os
 import re
 import secrets
 import sqlite3
 import sys
 from pathlib import Path
-from urllib.parse import urlencode
 
 from flask import Flask, Response, flash, redirect, render_template, request, session, url_for
 
@@ -22,9 +22,112 @@ from web.audit import log_audit
 from web.github_source import (
     GitHubSourceError,
     collect_last_24_hours,
+    normalize_repository,
     validate_repository,
 )
 from web.publisher_auth import hash_password, verify_password
+
+
+ARCHIVE_PAGE_SIZE = 6
+GITHUB_PAGE_SIZE = 8
+
+
+def _parse_date(value):
+    if not value:
+        return None
+    try:
+        parsed = datetime.date.fromisoformat(value)
+    except ValueError:
+        raise ValueError("日期必须是有效的 YYYY-MM-DD 日期。") from None
+    if parsed.isoformat() != value:
+        raise ValueError("日期必须是 YYYY-MM-DD 格式。")
+    return parsed
+
+
+def _date_window(from_value, to_value, default_days=30):
+    if not from_value and not to_value:
+        return "", ""
+    today = datetime.date.today()
+    start = _parse_date(from_value) or today - datetime.timedelta(days=default_days)
+    end = _parse_date(to_value) or today
+    if start > end:
+        raise ValueError("开始日期不能晚于结束日期。")
+    return start.isoformat(), end.isoformat()
+
+
+def _parse_page(value):
+    try:
+        return max(1, int(value))
+    except (TypeError, ValueError):
+        return 1
+
+
+def _relative_time(value):
+    committed_at = datetime.datetime.fromisoformat(value)
+    if committed_at.tzinfo is None:
+        committed_at = committed_at.replace(tzinfo=datetime.timezone.utc)
+    elapsed = max(
+        0,
+        int((datetime.datetime.now(datetime.timezone.utc) - committed_at).total_seconds()),
+    )
+    if elapsed < 3600:
+        return f"{max(1, elapsed // 60)} 分钟前"
+    if elapsed < 86400:
+        return f"{elapsed // 3600} 小时前"
+    if elapsed < 172800:
+        return "昨天"
+    return committed_at.astimezone().strftime("%m月%d日")
+
+
+def _published_item(row):
+    created_at = datetime.datetime.fromisoformat(row["created_at"])
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=datetime.timezone.utc)
+    local_created_at = created_at.astimezone()
+    title = row["title"].strip() or "今日工作进展"
+    content = (row["content"] or "").strip()
+    return {
+        "id": f"publish-{row['id']}",
+        "work_date": row["work_date"],
+        "created_at": row["created_at"],
+        "local_created_at": local_created_at.strftime("%Y-%m-%d %H:%M"),
+        "relative_time": _relative_time(row["created_at"]),
+        "title": title,
+        "content": content,
+        "source_url": row["source_url"],
+        "member": row["member"],
+        "source_type": "成员日报",
+        "repository": "",
+        "sha_short": "",
+        "additions": 0,
+        "deletions": 0,
+        "changed_files": 0,
+    }
+
+
+def _github_item(row):
+    committed_at = datetime.datetime.fromisoformat(row["committed_at_utc"])
+    if committed_at.tzinfo is None:
+        committed_at = committed_at.replace(tzinfo=datetime.timezone.utc)
+    local_created_at = committed_at.astimezone()
+    message = (row["message"] or "").strip()
+    return {
+        "id": f"github-{row['id']}",
+        "work_date": row["work_date"],
+        "created_at": row["committed_at_utc"],
+        "local_created_at": local_created_at.strftime("%Y-%m-%d %H:%M"),
+        "relative_time": _relative_time(row["committed_at_utc"]),
+        "title": message.splitlines()[0] if message else "无提交说明",
+        "content": message,
+        "source_url": row["commit_url"],
+        "member": row["member"],
+        "source_type": "GitHub 提交",
+        "repository": row["repository"],
+        "sha_short": (row["sha"] or "")[:7],
+        "additions": row["additions"],
+        "deletions": row["deletions"],
+        "changed_files": row["changed_files"],
+    }
 
 
 def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
@@ -50,8 +153,44 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
         return token
 
     @app.context_processor
-    def inject_csrf_token():
-        return {"csrf_token": csrf_token}
+    def inject_template_context():
+        notifications = []
+        unread_notifications = 0
+        if "user_id" in session:
+            try:
+                with database_connection(app.config["DATABASE_PATH"]) as connection:
+                    rows = connection.execute(
+                        """SELECT id, title, created_at, read_at
+                           FROM user_notifications
+                           WHERE user_id = ?
+                           ORDER BY created_at DESC, id DESC
+                           LIMIT 6""",
+                        (session["user_id"],),
+                    ).fetchall()
+                for row in rows:
+                    created_at = datetime.datetime.fromisoformat(row["created_at"])
+                    if created_at.tzinfo is None:
+                        created_at = created_at.replace(tzinfo=datetime.timezone.utc)
+                    if not row["read_at"]:
+                        unread_notifications += 1
+                    notifications.append({
+                        "id": row["id"],
+                        "title": row["title"],
+                        "read": bool(row["read_at"]),
+                        "created_at": created_at.astimezone().strftime("%m月%d日 %H:%M"),
+                    })
+            except sqlite3.Error:
+                notifications = []
+                unread_notifications = 0
+        return {
+            "csrf_token": csrf_token(),
+            "notifications": notifications,
+            "unread_notifications": unread_notifications,
+            "current_user": {
+                "display_name": session.get("display_name", ""),
+                "username": session.get("username", ""),
+            },
+        }
 
     def csrf_valid():
         supplied = request.form.get("csrf_token", "")
@@ -65,15 +204,243 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
         selected_repository = session.get("selected_repository")
         if not selected_repository:
             return redirect(url_for("select_repository"))
+        today = datetime.date.today()
+        with database_connection(app.config["DATABASE_PATH"]) as connection:
+            commit_count = connection.execute(
+                "SELECT COUNT(*) FROM github_commits WHERE repository = ? AND work_date = ?",
+                (selected_repository, today.isoformat()),
+            ).fetchone()[0]
+            task_count = connection.execute(
+                "SELECT COUNT(*) FROM records WHERE category = 'tasks' AND work_date = ?",
+                (today.isoformat(),),
+            ).fetchone()[0]
+            published_count = connection.execute(
+                "SELECT COUNT(*) FROM published_items WHERE work_date = ?",
+                (today.isoformat(),),
+            ).fetchone()[0]
+            collaboration_count = connection.execute(
+                "SELECT COUNT(*) FROM records WHERE category = 'collaborations' AND work_date = ?",
+                (today.isoformat(),),
+            ).fetchone()[0]
         return render_template(
-            "publish.html",
+            "dashboard.html",
             display_name=session["display_name"],
-            today=datetime.date.today().isoformat(),
+            today=today.isoformat(),
+            today_label=f"{today.year}年{today.month}月{today.day}日 · 星期{('一', '二', '三', '四', '五', '六', '日')[today.weekday()]}",
             github_repository=selected_repository,
-            archive_url=(
-                "http://127.0.0.1:5000/archive?"
-                + urlencode({"repository": selected_repository})
-            ),
+            commit_count=commit_count,
+            progress_count=task_count + published_count,
+            collaboration_count=collaboration_count,
+            active_page="workbench",
+            page_title="工作台",
+            breadcrumb_title="工作台",
+            breadcrumb_subtitle="今日工作概览",
+            search_target=url_for("archive_page"),
+        )
+
+    @app.get("/archive")
+    def archive_page():
+        if "user_id" not in session:
+            return redirect(url_for("login"))
+        try:
+            date_from, date_to = _date_window(
+                request.args.get("from"),
+                request.args.get("to"),
+                default_days=30,
+            )
+        except ValueError as error:
+            return Response(str(error), status=400, content_type="text/plain; charset=utf-8")
+
+        query = request.args.get("q", "").strip().lower()
+        page = _parse_page(request.args.get("page"))
+        published_items = []
+        github_items = []
+
+        with database_connection(app.config["DATABASE_PATH"]) as connection:
+            if date_from and date_to:
+                published_rows = connection.execute(
+                    """SELECT p.id, p.work_date, p.title, p.content, p.source_url,
+                              p.created_at, u.display_name AS member
+                       FROM published_items p
+                       JOIN publisher_users u ON u.id = p.publisher_id
+                       WHERE p.work_date BETWEEN ? AND ?
+                       ORDER BY p.work_date DESC, p.created_at DESC, p.id DESC""",
+                    (date_from, date_to),
+                ).fetchall()
+                github_rows = connection.execute(
+                    """SELECT id, repository, sha, work_date, message, additions,
+                              deletions, changed_files, commit_url, committed_at_utc,
+                              member_name AS member, synced_by_username
+                       FROM github_commits
+                       WHERE work_date BETWEEN ? AND ?
+                       ORDER BY work_date DESC, committed_at_utc DESC, id DESC""",
+                    (date_from, date_to),
+                ).fetchall()
+            else:
+                published_rows = connection.execute(
+                    """SELECT p.id, p.work_date, p.title, p.content, p.source_url,
+                              p.created_at, u.display_name AS member
+                       FROM published_items p
+                       JOIN publisher_users u ON u.id = p.publisher_id
+                       ORDER BY p.work_date DESC, p.created_at DESC, p.id DESC"""
+                ).fetchall()
+                github_rows = connection.execute(
+                    """SELECT id, repository, sha, work_date, message, additions,
+                              deletions, changed_files, commit_url, committed_at_utc,
+                              member_name AS member, synced_by_username
+                       FROM github_commits
+                       ORDER BY work_date DESC, committed_at_utc DESC, id DESC"""
+                ).fetchall()
+
+        published_items = [_published_item(row) for row in published_rows]
+        github_items = [_github_item(row) for row in github_rows]
+        items = published_items + github_items
+        items.sort(key=lambda item: (item["work_date"], item["created_at"]), reverse=True)
+
+        if query:
+            items = [
+                item
+                for item in items
+                if query in " ".join([
+                    item["title"],
+                    item["content"],
+                    item["member"],
+                    item["repository"],
+                    item["source_type"],
+                ]).lower()
+            ]
+
+        total_items = len(items)
+        total_pages = max(1, math.ceil(total_items / ARCHIVE_PAGE_SIZE))
+        page = min(page, total_pages)
+        start_index = (page - 1) * ARCHIVE_PAGE_SIZE
+        visible_items = items[start_index:start_index + ARCHIVE_PAGE_SIZE]
+        page_window = list(range(max(1, page - 2), min(total_pages, page + 2) + 1))
+
+        return render_template(
+            "archive.html",
+            items=visible_items,
+            item_count=total_items,
+            page=page,
+            total_pages=total_pages,
+            page_window=page_window,
+            date_from=date_from,
+            date_to=date_to,
+            query=query,
+            today=datetime.date.today().isoformat(),
+            last_7_days=(datetime.date.today() - datetime.timedelta(days=6)).isoformat(),
+            active_page="archive",
+            page_title="日报归档",
+            breadcrumb_title="日报归档",
+            breadcrumb_subtitle="团队工作记录",
+            search_target=url_for("archive_page"),
+        )
+
+    @app.get("/github")
+    def github_activity_page():
+        if "user_id" not in session:
+            return redirect(url_for("login"))
+        try:
+            date_from, date_to = _date_window(
+                request.args.get("from"),
+                request.args.get("to"),
+                default_days=30,
+            )
+        except ValueError as error:
+            return Response(str(error), status=400, content_type="text/plain; charset=utf-8")
+
+        repository = request.args.get("repository", "").strip()
+        if repository:
+            try:
+                repository = normalize_repository(repository)
+            except GitHubSourceError as error:
+                return Response(str(error), status=400, content_type="text/plain; charset=utf-8")
+        else:
+            repository = session.get("selected_repository", "")
+
+        query = request.args.get("q", "").strip().lower()
+        page = _parse_page(request.args.get("page"))
+        conditions = []
+        parameters = []
+        if date_from and date_to:
+            conditions.append("work_date BETWEEN ? AND ?")
+            parameters.extend([date_from, date_to])
+        if repository:
+            conditions.append("repository = ?")
+            parameters.append(repository)
+        where_sql = "WHERE " + " AND ".join(conditions) if conditions else ""
+
+        with database_connection(app.config["DATABASE_PATH"]) as connection:
+            repository_rows = connection.execute(
+                "SELECT DISTINCT repository FROM github_commits ORDER BY repository"
+            ).fetchall()
+            rows = connection.execute(
+                f"""SELECT id, repository, sha, work_date, message, additions,
+                           deletions, changed_files, commit_url, committed_at_utc,
+                           member_name AS member, synced_by_username
+                    FROM github_commits
+                    {where_sql}
+                    ORDER BY committed_at_utc DESC, id DESC""",
+                parameters,
+            ).fetchall()
+            sync_status = None
+            if repository:
+                sync_status = connection.execute(
+                    """SELECT status, commit_count, completed_at_utc, error_message
+                       FROM github_sync_runs
+                       WHERE repository = ?
+                       ORDER BY id DESC LIMIT 1""",
+                    (repository,),
+                ).fetchone()
+
+        items = [_github_item(row) for row in rows]
+        if query:
+            items = [
+                item
+                for item in items
+                if query in " ".join([
+                    item["title"],
+                    item["content"],
+                    item["member"],
+                    item["repository"],
+                    item["sha_short"],
+                ]).lower()
+            ]
+
+        total_items = len(items)
+        total_pages = max(1, math.ceil(total_items / GITHUB_PAGE_SIZE))
+        page = min(page, total_pages)
+        start_index = (page - 1) * GITHUB_PAGE_SIZE
+        visible_items = items[start_index:start_index + GITHUB_PAGE_SIZE]
+        page_window = list(range(max(1, page - 2), min(total_pages, page + 2) + 1))
+        stats = {
+            "commit_count": total_items,
+            "additions": sum(item["additions"] for item in items),
+            "deletions": sum(item["deletions"] for item in items),
+            "changed_files": sum(item["changed_files"] for item in items),
+            "member_count": len({item["member"] for item in items}),
+        }
+        repository_options = [row["repository"] for row in repository_rows]
+
+        return render_template(
+            "github.html",
+            items=visible_items,
+            item_count=total_items,
+            page=page,
+            total_pages=total_pages,
+            page_window=page_window,
+            date_from=date_from,
+            date_to=date_to,
+            query=query,
+            repository=repository,
+            repository_options=repository_options,
+            stats=stats,
+            sync_status=sync_status,
+            active_page="github",
+            page_title="GitHub 活动",
+            breadcrumb_title="GitHub 活动",
+            breadcrumb_subtitle="仓库活动流水",
+            search_target=url_for("github_activity_page"),
         )
 
     @app.route("/repository", methods=["GET", "POST"])
@@ -97,11 +464,7 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
                     current_repository=entered_repository,
                 ), 400
             session["selected_repository"] = selected_repository
-            archive_url = (
-                "http://127.0.0.1:5000/archive?"
-                + urlencode({"repository": selected_repository})
-            )
-            return redirect(archive_url)
+            return redirect(url_for("home"))
         return render_template(
             "repository.html",
             current_repository=session.get("selected_repository", ""),
@@ -235,6 +598,18 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
             return redirect(url_for("home"))
         title = request.form.get("title", "").strip()
         content = request.form.get("content", "").strip()
+        progress_sections = (
+            ("今天完成了什么", request.form.get("finished", "").strip()),
+            ("遇到了什么问题", request.form.get("problems", "").strip()),
+            ("下一步准备做什么", request.form.get("next_steps", "").strip()),
+        )
+        if any(value for _, value in progress_sections):
+            title = title or "今日工作进展"
+            content = "\n\n".join(
+                f"{label}：\n{value}"
+                for label, value in progress_sections
+                if value
+            )
         source_url = request.form.get("source_url", "").strip()
         work_date = request.form.get("work_date", "")
         try:
@@ -272,7 +647,7 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
                 summary={"has_source_url": bool(source_url)},
             )
         flash("发布成功，信息已自动归档到所选日期。", "success")
-        return redirect(url_for("home"))
+        return redirect(url_for("home", _anchor="daily-form"))
 
     @app.post("/github/sync")
     def sync_github():
@@ -342,15 +717,54 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
                           actor_id=actor_id, actor_name=actor_name,
                           summary={"error_code": "source_unavailable"})
             flash(f"GitHub 提取失败：{error}", "error")
-        return redirect(url_for("home"))
+        return redirect(url_for("github_activity_page", repository=repository))
 
     @app.get("/notifications")
     def notifications_page():
-        return redirect(url_for("home"))
+        return redirect(url_for("github_activity_page"))
 
     @app.post("/notifications/<int:notification_id>/read")
     def mark_notification_read(notification_id):
-        return redirect(url_for("notifications_page"))
+        if "user_id" not in session:
+            return redirect(url_for("login"))
+        if not csrf_valid():
+            return Response("页面已过期，请刷新后重试。", status=400, content_type="text/plain; charset=utf-8")
+        with database_connection(app.config["DATABASE_PATH"]) as connection:
+            connection.execute(
+                """UPDATE user_notifications
+                   SET read_at = COALESCE(read_at, ?)
+                   WHERE id = ? AND user_id = ?""",
+                (
+                    datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
+                    notification_id,
+                    session["user_id"],
+                ),
+            )
+        next_url = request.form.get("next", "")
+        if not next_url.startswith("/"):
+            next_url = url_for("home")
+        return redirect(next_url)
+
+    @app.post("/notifications/read-all")
+    def mark_all_notifications_read():
+        if "user_id" not in session:
+            return redirect(url_for("login"))
+        if not csrf_valid():
+            return Response("页面已过期，请刷新后重试。", status=400, content_type="text/plain; charset=utf-8")
+        with database_connection(app.config["DATABASE_PATH"]) as connection:
+            connection.execute(
+                """UPDATE user_notifications
+                   SET read_at = ?
+                   WHERE user_id = ? AND read_at IS NULL""",
+                (
+                    datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
+                    session["user_id"],
+                ),
+            )
+        next_url = request.form.get("next", "")
+        if not next_url.startswith("/"):
+            next_url = url_for("home")
+        return redirect(next_url)
 
     return app
 

@@ -1,0 +1,184 @@
+{% extends "dashboard_shell.html" %}
+
+{% block content_class %}github-page{% endblock %}
+
+{% block content %}
+  <section class="page-hero github-page-hero">
+    <div>
+      <p class="page-eyebrow">GITHUB ACTIVITY</p>
+      <h1>GitHub 活动</h1>
+      <p>查看所选仓库的完整提交流水、代码变更与团队成员贡献。</p>
+    </div>
+    <div class="page-metric">
+      <strong>{{ stats.commit_count }}</strong>
+      <span>条提交记录</span>
+    </div>
+  </section>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}
+      <p class="flash is-{{ category }} dashboard-flash" role="status">{{ message }}</p>
+    {% endfor %}
+  {% endwith %}
+
+  <section class="github-stat-grid" aria-label="GitHub 数据概览">
+    <article class="github-stat-card">
+      <span class="github-stat-icon is-blue" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><path d="M8 7 4 12l4 5M16 7l4 5-4 5M14 4l-4 16"/></svg>
+      </span>
+      <div><span>提交次数</span><strong>{{ stats.commit_count }}</strong></div>
+    </article>
+    <article class="github-stat-card">
+      <span class="github-stat-icon is-green" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+      </span>
+      <div><span>新增行数</span><strong>+{{ stats.additions }}</strong></div>
+    </article>
+    <article class="github-stat-card">
+      <span class="github-stat-icon is-red" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg>
+      </span>
+      <div><span>删除行数</span><strong>−{{ stats.deletions }}</strong></div>
+    </article>
+    <article class="github-stat-card">
+      <span class="github-stat-icon is-purple" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6zM14 3v5h5"/></svg>
+      </span>
+      <div><span>涉及文件</span><strong>{{ stats.changed_files }}</strong></div>
+    </article>
+    <article class="github-stat-card">
+      <span class="github-stat-icon is-orange" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/></svg>
+      </span>
+      <div><span>贡献成员</span><strong>{{ stats.member_count }}</strong></div>
+    </article>
+  </section>
+
+  <section class="github-control-panel" aria-label="筛选 GitHub 活动">
+    <div class="page-filter-copy">
+      <strong>仓库活动筛选</strong>
+      <span>按仓库与时间范围查看完整提交流水</span>
+    </div>
+    <form class="github-filter-form" method="get" action="{{ url_for('github_activity_page') }}">
+      <label for="github-repository">仓库</label>
+      <select id="github-repository" name="repository">
+        {% for option in repository_options %}
+          <option value="{{ option }}" {% if option == repository %}selected{% endif %}>{{ option }}</option>
+        {% endfor %}
+      </select>
+      <label for="github-from">开始日期</label>
+      <input id="github-from" type="date" name="from" value="{{ date_from or '' }}">
+      <span class="filter-separator" aria-hidden="true">至</span>
+      <label for="github-to">结束日期</label>
+      <input id="github-to" type="date" name="to" value="{{ date_to or '' }}">
+      {% if query %}
+        <input type="hidden" name="q" value="{{ query }}">
+      {% endif %}
+      <button class="dashboard-primary" type="submit">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m11 4 7 8-7 8M4 12h14"/></svg>
+        应用筛选
+      </button>
+      {% if date_from or date_to or repository or query %}
+        <a class="filter-reset" href="{{ url_for('github_activity_page') }}">重置</a>
+      {% endif %}
+    </form>
+  </section>
+
+  <section class="github-sync-strip">
+    <div class="github-sync-status">
+      <span class="github-sync-indicator {% if sync_status and sync_status.status == 'succeeded' %}is-success{% elif sync_status and sync_status.status == 'failed' %}is-error{% endif %}"></span>
+      <div>
+        <strong>
+          {% if sync_status and sync_status.status == 'succeeded' %}最近一次同步成功
+          {% elif sync_status and sync_status.status == 'failed' %}最近一次同步失败
+          {% else %}尚未同步
+          {% endif %}
+        </strong>
+        <span>
+          {% if sync_status %}
+            {{ sync_status.completed_at_utc[:16].replace('T', ' ') }} ·
+            {% if sync_status.status == 'failed' %}{{ sync_status.error_message }}
+            {% else %}获取 {{ sync_status.commit_count }} 条提交
+            {% endif %}
+          {% else %}
+            连接仓库后获取最近 24 小时的提交记录
+          {% endif %}
+        </span>
+      </div>
+    </div>
+    <form method="post" action="{{ url_for('sync_github') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="dashboard-primary sync-now-button" type="submit">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6v5h-5M4 18v-5h5M18.5 9A7 7 0 0 0 6 6.5L4 9M5.5 15A7 7 0 0 0 18 17.5l2-2.5"/></svg>
+        立即同步
+      </button>
+    </form>
+  </section>
+
+  <section class="page-results" aria-labelledby="github-results-title">
+    <div class="page-heading">
+      <div>
+        <h2 id="github-results-title">提交活动流水</h2>
+        <span>最新提交优先，点击提交编号可打开 GitHub 原文</span>
+      </div>
+      <span class="page-range">当前共 {{ item_count }} 条</span>
+    </div>
+
+    {% if items %}
+      <div class="github-activity-list">
+        {% for item in items %}
+          <article class="github-activity-row">
+            <div class="github-commit-main">
+              <a class="commit-hash" href="{{ item.source_url }}" target="_blank" rel="noopener noreferrer">{{ item.sha_short }}</a>
+              <div>
+                <a class="commit-message" href="{{ item.source_url }}" target="_blank" rel="noopener noreferrer">{{ item.title }}</a>
+                {% if item.content and item.content != item.title %}
+                  <p class="commit-full-message">{{ item.content }}</p>
+                {% endif %}
+                <p class="commit-meta">{{ item.member }} · {{ item.repository }} · {{ item.local_created_at }}（{{ item.relative_time }}）</p>
+              </div>
+            </div>
+            <div class="github-commit-changes">
+              <span class="change-addition">+{{ item.additions }}</span>
+              <span class="change-deletion">−{{ item.deletions }}</span>
+              <span>{{ item.changed_files }} 个文件</span>
+            </div>
+          </article>
+        {% endfor %}
+      </div>
+    {% else %}
+      <section class="archive-empty-state github-empty-state">
+        <span class="archive-empty-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="m3 12 4.2 0 2.1-6.5L13 19l2.6-7H21"/></svg>
+        </span>
+        <h2>当前条件下还没有 GitHub 提交</h2>
+        <p>尝试调整时间范围或仓库，也可以点击“立即同步”获取该仓库最近 24 小时的活动。</p>
+      </section>
+    {% endif %}
+
+    {% if total_pages > 1 %}
+      <nav class="pagination" aria-label="GitHub 活动分页">
+        {% if page > 1 %}
+          <a href="{{ url_for('github_activity_page', page=page - 1, q=query or none, repository=repository or none, from=date_from or none, to=date_to or none) }}">上一页</a>
+        {% else %}
+          <span class="is-disabled">上一页</span>
+        {% endif %}
+        <div class="pagination-pages">
+          {% for page_number in page_window %}
+            <a class="{% if page_number == page %}is-current{% endif %}"
+               href="{{ url_for('github_activity_page', page=page_number, q=query or none, repository=repository or none, from=date_from or none, to=date_to or none) }}"
+               {% if page_number == page %}aria-current="page"{% endif %}>{{ page_number }}</a>
+          {% endfor %}
+        </div>
+        {% if page < total_pages %}
+          <a href="{{ url_for('github_activity_page', page=page + 1, q=query or none, repository=repository or none, from=date_from or none, to=date_to or none) }}">下一页</a>
+        {% else %}
+          <span class="is-disabled">下一页</span>
+        {% endif %}
+      </nav>
+      <p class="page-summary">第 {{ page }} / {{ total_pages }} 页</p>
+    {% endif %}
+  </section>
+
+  <footer class="dashboard-footer">GitHub 提交按北京时间工作日期归档 · 代码变更数据由仓库同步生成</footer>
+{% endblock %}

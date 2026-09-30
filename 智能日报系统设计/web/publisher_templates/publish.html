@@ -14,7 +14,7 @@
     </nav>
     <header class="publisher-hero">
       <div><p class="eyebrow">MEMBER UPDATE</p><h1>分享工作进展</h1><p class="intro">你好，{{ display_name }}。发布后会自动归档到所选日期。</p></div>
-      <form method="post" action="{{ url_for('logout') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="button-quiet" type="submit">退出</button></form>
+      <form method="post" action="{{ url_for('logout') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="button-quiet" type="submit">退出</button></form>
     </header>
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% for category, message in messages %}<p class="flash is-{{ category }}">{{ message }}</p>{% endfor %}
@@ -26,7 +26,7 @@
       </div>
       <div class="github-sync-actions">
         <form action="{{ url_for('sync_github') }}" method="post">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <button type="submit">立即提取</button>
         </form>
         <a class="nav-secondary" href="{{ archive_url }}">查看此仓库归档 ↗</a>
@@ -34,7 +34,7 @@
       </div>
     </section>
     <form class="publisher-card publisher-form publish-form" method="post" action="{{ url_for('publish') }}">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <div class="publish-date-row"><label for="work-date">归档日期</label><input id="work-date" type="date" name="work_date" value="{{ today }}" required><span>信息将归入这一天</span></div>
       <label>标题<input name="title" maxlength="200" placeholder="用一句话概括今天的工作" required></label>
       <label>工作内容<textarea name="content" rows="8" placeholder="写下完成了什么、目前进展或需要协作的事项" required></textarea></label>

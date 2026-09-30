@@ -3,27 +3,35 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>信息发布系统 · 登录</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css', v=2) }}">
+  <meta name="theme-color" content="#f5f6f8">
+  <title>登录 · 智能日报</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css', v=5) }}">
 </head>
-<body>
-  <main class="page-shell auth-shell">
-    <nav class="app-nav" aria-label="主导航"><a class="app-brand" href="http://127.0.0.1:5000/archive"><span class="brand-mark">W</span><span>工作日志</span></a><a class="nav-secondary" href="http://127.0.0.1:5000/archive">团队归档</a></nav>
-    <header class="page-header">
-      <p class="eyebrow">MEMBER UPDATE</p>
-      <h1>登录后发布进展</h1>
-      <p class="intro">发布的信息会按工作日期自动归档，方便团队查阅。</p>
-    </header>
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% for category, message in messages %}<p class="flash is-{{ category }}">{{ message }}</p>{% endfor %}
-    {% endwith %}
-    <form class="publisher-card publisher-form" method="post" action="{{ url_for('login') }}">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <label>用户名<input name="username" autocomplete="username" required autofocus></label>
-      <label>密码<input type="password" name="password" autocomplete="current-password" required></label>
-      <button type="submit">登录</button>
-    </form>
-    <p class="publisher-footnote">还没有账号？<a href="{{ url_for('register') }}">创建账号</a></p>
+<body class="dashboard-page auth-page">
+  <main class="auth-screen">
+    <nav class="auth-topbar" aria-label="页面导航">
+      <a class="dashboard-brand" href="http://127.0.0.1:5000/archive"><span class="dashboard-brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m13.2 2.8-8 10.1a.7.7 0 0 0 .55 1.13h5.1l-1 7.2 9-11.4a.7.7 0 0 0-.55-1.13h-5.2z"/></svg></span><span>智能日报</span></a>
+      <a class="auth-top-link" href="http://127.0.0.1:5000/archive">团队日报归档 <span aria-hidden="true">↗</span></a>
+    </nav>
+    <section class="auth-card" aria-labelledby="auth-title">
+      <div class="auth-card-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3.5 20 7v5.3c0 4.3-3.2 7.3-8 9.2-4.8-1.9-8-4.9-8-9.2V7z"/><path d="m8.5 12 2.2 2.2 4.8-4.8"/></svg></div>
+      <p class="auth-eyebrow">WELCOME BACK</p>
+      <h1 id="auth-title">登录工作台</h1>
+      <p class="auth-description">登录后记录进展，查看团队每日动态。</p>
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for category, message in messages %}<p class="flash is-{{ category }} auth-flash" role="status">{{ message }}</p>{% endfor %}
+      {% endwith %}
+      <form class="auth-form" method="post" action="{{ url_for('login') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label for="username">用户名</label>
+        <input id="username" name="username" autocomplete="username" placeholder="输入你的用户名" required autofocus>
+        <label for="password">密码</label>
+        <input id="password" type="password" name="password" autocomplete="current-password" placeholder="输入登录密码" required>
+        <button class="dashboard-primary auth-submit" type="submit">登录 <span aria-hidden="true">→</span></button>
+      </form>
+      <p class="auth-switch">还没有账号？<a href="{{ url_for('register') }}">创建成员账号</a></p>
+    </section>
+    <p class="auth-privacy">你的工作记录仅用于团队日报与协作</p>
   </main>
 </body>
 </html>

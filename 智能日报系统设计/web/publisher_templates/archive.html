@@ -1,0 +1,128 @@
+{% extends "dashboard_shell.html" %}
+
+{% block content_class %}archive-page{% endblock %}
+
+{% block content %}
+  <section class="page-hero archive-page-hero">
+    <div>
+      <p class="page-eyebrow">REPORT ARCHIVE</p>
+      <h1>日报归档</h1>
+      <p>集中查看成员发布的日报与同步进来的 GitHub 提交，按日期追溯团队工作记录。</p>
+    </div>
+    <div class="page-metric">
+      <strong>{{ item_count }}</strong>
+      <span>条归档记录</span>
+    </div>
+  </section>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}
+      <p class="flash is-{{ category }} dashboard-flash" role="status">{{ message }}</p>
+    {% endfor %}
+  {% endwith %}
+
+  <section class="page-filter-bar" aria-label="筛选归档记录">
+    <div class="page-filter-copy">
+      <strong>筛选时间范围</strong>
+      <span>可按开始日期和结束日期定位历史日报</span>
+    </div>
+    <form class="page-filter-form" method="get" action="{{ url_for('archive_page') }}">
+      <label for="archive-from">开始日期</label>
+      <input id="archive-from" type="date" name="from" value="{{ date_from or '' }}">
+      <span class="filter-separator" aria-hidden="true">至</span>
+      <label for="archive-to">结束日期</label>
+      <input id="archive-to" type="date" name="to" value="{{ date_to or '' }}">
+      {% if query %}
+        <input type="hidden" name="q" value="{{ query }}">
+      {% endif %}
+      <button class="dashboard-primary" type="submit">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m11 4 7 8-7 8M4 12h14"/></svg>
+        筛选
+      </button>
+      {% if date_from or date_to or query %}
+        <a class="filter-reset" href="{{ url_for('archive_page') }}">重置</a>
+      {% endif %}
+    </form>
+  </section>
+
+  <section class="page-results" aria-labelledby="archive-results-title">
+    <div class="page-heading">
+      <div>
+        <h2 id="archive-results-title">归档流水</h2>
+        <span>成员日报与 GitHub 提交按工作日期倒序排列</span>
+      </div>
+      <span class="page-range">当前共 {{ item_count }} 条</span>
+    </div>
+
+    {% if items %}
+      <div class="archive-record-list">
+        {% for item in items %}
+          <article class="archive-record-card">
+            <header class="archive-record-head">
+              <div class="archive-record-title">
+                <span class="archive-source-badge {% if item.source_type == 'GitHub 提交' %}is-github{% endif %}">{{ item.source_type }}</span>
+                <h3>{{ item.title }}</h3>
+              </div>
+              <div class="archive-record-time">
+                <time datetime="{{ item.work_date }}">{{ item.work_date }}</time>
+                <span>{{ item.relative_time }}</span>
+              </div>
+            </header>
+            <div class="archive-record-meta">
+              <span class="archive-member">{{ item.member }}</span>
+              {% if item.source_type == 'GitHub 提交' %}
+                <span class="archive-repository">{{ item.repository }}</span>
+                {% if item.sha_short %}<a href="{{ item.source_url }}" target="_blank" rel="noopener noreferrer">{{ item.sha_short }}</a>{% endif %}
+                <span class="archive-line-changes">+{{ item.additions }} <b>−{{ item.deletions }}</b> {{ item.changed_files }} 个文件</span>
+              {% else %}
+                <span>成员工作日报</span>
+              {% endif %}
+            </div>
+            {% if item.content and item.content != item.title %}
+              <p class="archive-record-content">{{ item.content }}</p>
+            {% endif %}
+            {% if item.source_url %}
+              <a class="archive-source-link" href="{{ item.source_url }}" target="_blank" rel="noopener noreferrer">
+                查看来源 <span aria-hidden="true">↗</span>
+              </a>
+            {% endif %}
+          </article>
+        {% endfor %}
+      </div>
+    {% else %}
+      <section class="archive-empty-state">
+        <span class="archive-empty-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><rect x="4" y="5.5" width="16" height="15" rx="2"/><path d="M8 3.5v4M16 3.5v4M4 10h16M8 14h8"/></svg>
+        </span>
+        <h2>这个时间范围还没有归档记录</h2>
+        <p>成员发布进展后会自动归档到这里。你可以调整日期，或先去工作台发布今天的工作进展。</p>
+        <a class="dashboard-primary" href="{{ url_for('home', _anchor='daily-form') }}">去发布进展 <span aria-hidden="true">→</span></a>
+      </section>
+    {% endif %}
+
+    {% if total_pages > 1 %}
+      <nav class="pagination" aria-label="归档分页">
+        {% if page > 1 %}
+          <a href="{{ url_for('archive_page', page=page - 1, q=query or none, from=date_from or none, to=date_to or none) }}">上一页</a>
+        {% else %}
+          <span class="is-disabled">上一页</span>
+        {% endif %}
+        <div class="pagination-pages">
+          {% for page_number in page_window %}
+            <a class="{% if page_number == page %}is-current{% endif %}"
+               href="{{ url_for('archive_page', page=page_number, q=query or none, from=date_from or none, to=date_to or none) }}"
+               {% if page_number == page %}aria-current="page"{% endif %}>{{ page_number }}</a>
+          {% endfor %}
+        </div>
+        {% if page < total_pages %}
+          <a href="{{ url_for('archive_page', page=page + 1, q=query or none, from=date_from or none, to=date_to or none) }}">下一页</a>
+        {% else %}
+          <span class="is-disabled">下一页</span>
+        {% endif %}
+      </nav>
+      <p class="page-summary">第 {{ page }} / {{ total_pages }} 页</p>
+    {% endif %}
+  </section>
+
+  <footer class="dashboard-footer">成员发布内容按选择日期归档 · GitHub 提交按北京时间提交日期归档</footer>
+{% endblock %}

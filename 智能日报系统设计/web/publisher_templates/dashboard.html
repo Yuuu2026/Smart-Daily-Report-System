@@ -1,0 +1,104 @@
+{% extends "dashboard_shell.html" %}
+
+{% block content_class %}workbench-page{% endblock %}
+
+{% block content %}
+  <section class="welcome-card">
+    <div>
+      <p class="welcome-date">{{ today_label }}</p>
+      <h1>今天也辛苦了，{{ display_name }}。</h1>
+      <p class="welcome-subtitle">这里是团队今天的工作概览。</p>
+    </div>
+    <span class="welcome-orbit" aria-hidden="true"><span></span><span></span><span></span></span>
+  </section>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}
+      <p class="flash is-{{ category }} dashboard-flash" role="status">{{ message }}</p>
+    {% endfor %}
+  {% endwith %}
+
+  <section class="dashboard-stats" aria-label="今日数据概览">
+    <article class="stat-card">
+      <div class="stat-card-top">
+        <span>今日提交</span>
+        <span class="stat-icon stat-icon-blue" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M8 7 4 12l4 5M16 7l4 5-4 5M14 4l-4 16"/></svg>
+        </span>
+      </div>
+      <p class="stat-value">{{ commit_count }}<small>次</small></p>
+      <p class="stat-caption">更新于今天</p>
+    </article>
+
+    <article class="stat-card">
+      <div class="stat-card-top">
+        <span>工作进展</span>
+        <span class="stat-icon stat-icon-green" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="m5 12 4.2 4.2L19 6.5"/></svg>
+        </span>
+      </div>
+      <p class="stat-value">{{ progress_count }}<small>条</small></p>
+      <p class="stat-caption">更新于今天</p>
+    </article>
+
+    <article class="stat-card">
+      <div class="stat-card-top">
+        <span>协作记录</span>
+        <span class="stat-icon stat-icon-orange" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5 8 8 0 0 1-3.5-.8L4 20l1.8-4A7.5 7.5 0 1 1 20 11.5Z"/></svg>
+        </span>
+      </div>
+      <p class="stat-value">{{ collaboration_count }}<small>条</small></p>
+      <p class="stat-caption">更新于今天</p>
+    </article>
+
+    <article class="stat-card stat-repository">
+      <div class="stat-card-top">
+        <span>当前仓库</span>
+        <span class="stat-icon stat-icon-purple" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><circle cx="7" cy="6" r="2.5"/><circle cx="17" cy="18" r="2.5"/><path d="M7 8.5v6a3.5 3.5 0 0 0 3.5 3.5h4M17 15.5v-6A3.5 3.5 0 0 0 13.5 6H10"/></svg>
+        </span>
+      </div>
+      <p class="repository-name" title="{{ github_repository }}">{{ github_repository }}</p>
+      <p class="stat-caption"><span class="connected-dot"></span> 已连接 GitHub 仓库</p>
+    </article>
+  </section>
+
+  <section class="progress-section" id="daily-form">
+    <div class="section-heading">
+      <h2>今日工作进展</h2>
+      <span>花一点时间记录今天</span>
+    </div>
+    <form class="progress-card" method="post" action="{{ url_for('publish') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label class="dashboard-work-date" for="work-date">
+        <span>{{ today_label }}</span>
+        <input id="work-date" type="date" name="work_date" value="{{ today }}" required>
+      </label>
+      <label class="progress-question">
+        <span class="question-title"><i>1</i>今天完成了什么？</span>
+        <textarea name="finished" rows="2" placeholder="例如：完成日报归档页的视觉升级，合并了 PR #128"></textarea>
+      </label>
+      <label class="progress-question">
+        <span class="question-title"><i>2</i>遇到了什么问题？</span>
+        <textarea name="problems" rows="2" placeholder="例如：GitHub 同步接口偶发超时，正在排查重试策略"></textarea>
+      </label>
+      <label class="progress-question">
+        <span class="question-title"><i>3</i>下一步准备做什么？</span>
+        <textarea name="next_steps" rows="2" placeholder="例如：优化活动时间线的骨架屏加载体验"></textarea>
+      </label>
+      <div class="progress-actions">
+        <span>至少填写一项即可发布</span>
+        <div>
+          <button class="button-text" type="reset">清空</button>
+          <button class="dashboard-primary" type="submit">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21 3-7.2 18-3.9-7.1L3 10zM9.9 13.9 21 3"/></svg>
+            发布进展
+          </button>
+        </div>
+      </div>
+    </form>
+  </section>
+
+  <footer class="dashboard-footer">智能日报 · 让团队进展一目了然</footer>
+{% endblock %}

@@ -3,31 +3,41 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>信息发布系统 · 创建账号</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css', v=2) }}">
+  <meta name="theme-color" content="#f5f6f8">
+  <title>创建成员账号 · 智能日报</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css', v=5) }}">
 </head>
-<body>
-  <main class="page-shell auth-shell">
-    <nav class="app-nav" aria-label="主导航"><a class="app-brand" href="http://127.0.0.1:5000/archive"><span class="brand-mark">W</span><span>工作日志</span></a><a class="nav-secondary" href="http://127.0.0.1:5000/archive">团队归档</a></nav>
-    <header class="page-header">
-      <p class="eyebrow">JOIN YOUR TEAM</p>
-      <h1>创建成员账号</h1>
-      <p class="intro">创建账号后，就可以发布工作进展并查看团队归档。</p>
-    </header>
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% for category, message in messages %}<p class="flash is-{{ category }}">{{ message }}</p>{% endfor %}
-    {% endwith %}
-    <form class="publisher-card publisher-form" method="post" action="{{ url_for('register') }}">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <label>用户名<input name="username" minlength="3" maxlength="32" pattern="[A-Za-z0-9_.-]+" autocomplete="username" required autofocus></label>
-      <small>3–32 位字母、数字或 . _ -；不区分大小写。</small>
-      <label>显示名称<input name="display_name" maxlength="80" autocomplete="name" required></label>
-      <label>密码<input type="password" name="password" minlength="12" maxlength="128" autocomplete="new-password" required></label>
-      <small>密码至少 12 位，数据库只保存加盐哈希。</small>
-      <label>确认密码<input type="password" name="password_confirm" minlength="12" maxlength="128" autocomplete="new-password" required></label>
-      <button type="submit">创建账号</button>
-    </form>
-    <p class="publisher-footnote">已有账号？<a href="{{ url_for('login') }}">返回登录</a></p>
+<body class="dashboard-page auth-page">
+  <main class="auth-screen auth-screen-register">
+    <nav class="auth-topbar" aria-label="页面导航">
+      <a class="dashboard-brand" href="http://127.0.0.1:5000/archive"><span class="dashboard-brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m13.2 2.8-8 10.1a.7.7 0 0 0 .55 1.13h5.1l-1 7.2 9-11.4a.7.7 0 0 0-.55-1.13h-5.2z"/></svg></span><span>智能日报</span></a>
+      <a class="auth-top-link" href="http://127.0.0.1:5000/archive">团队日报归档 <span aria-hidden="true">↗</span></a>
+    </nav>
+    <section class="auth-card auth-card-register" aria-labelledby="auth-title">
+      <div class="auth-card-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M16 20v-1.6a3.4 3.4 0 0 0-3.4-3.4H6.4A3.4 3.4 0 0 0 3 18.4V20M9.5 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7ZM19 8v6M16 11h6"/></svg></div>
+      <p class="auth-eyebrow">JOIN YOUR TEAM</p>
+      <h1 id="auth-title">创建成员账号</h1>
+      <p class="auth-description">加入团队，发布工作进展并查看每日归档。</p>
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for category, message in messages %}<p class="flash is-{{ category }} auth-flash" role="status">{{ message }}</p>{% endfor %}
+      {% endwith %}
+      <form class="auth-form" method="post" action="{{ url_for('register') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label for="username">用户名</label>
+        <input id="username" name="username" minlength="3" maxlength="32" pattern="[A-Za-z0-9_.-]+" autocomplete="username" placeholder="3–32 位字母、数字或 . _ -" required autofocus>
+        <small class="auth-help">用户名不区分大小写。</small>
+        <label for="display-name">显示名称</label>
+        <input id="display-name" name="display_name" maxlength="80" autocomplete="name" placeholder="团队成员看到的名称" required>
+        <label for="password">密码</label>
+        <input id="password" type="password" name="password" minlength="12" maxlength="128" autocomplete="new-password" placeholder="至少 12 位" required>
+        <small class="auth-help">密码只以加盐哈希形式保存。</small>
+        <label for="password-confirm">确认密码</label>
+        <input id="password-confirm" type="password" name="password_confirm" minlength="12" maxlength="128" autocomplete="new-password" placeholder="再次输入密码" required>
+        <button class="dashboard-primary auth-submit" type="submit">创建账号 <span aria-hidden="true">→</span></button>
+      </form>
+      <p class="auth-switch">已有账号？<a href="{{ url_for('login') }}">返回登录</a></p>
+    </section>
+    <p class="auth-privacy">你的工作记录仅用于团队日报与协作</p>
   </main>
 </body>
 </html>
