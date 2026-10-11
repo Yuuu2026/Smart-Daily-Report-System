@@ -105,7 +105,11 @@
           {% endif %}
         </span>
         <span class="github-sync-email">
-          立即同步仅拉取提交记录，发送邮件通知请在工作台发布日报时操作
+          {% if notification_email %}
+            已同步提交可一键发送到收件人 {{ notification_email }}
+          {% else %}
+            请先在工作台「邮件收发配置」填写收件人邮箱，即可把提交记录发送给收件人
+          {% endif %}
         </span>
       </div>
     </div>
@@ -115,6 +119,13 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6v5h-5M4 18v-5h5M18.5 9A7 7 0 0 0 6 6.5L4 9M5.5 15A7 7 0 0 0 18 17.5l2-2.5"/></svg>
         立即同步
       </button>
+      {% if notification_email %}
+        <button class="dashboard-primary sync-now-button" type="submit"
+                formaction="{{ url_for('send_github_commits') }}">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 6 8-4 8 4v12l-8 4-8-4Z"/><path d="m4 6 8 4 8-4M12 10v12"/></svg>
+          发送给收件人
+        </button>
+      {% endif %}
     </form>
   </section>
 

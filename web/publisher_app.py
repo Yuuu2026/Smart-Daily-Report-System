@@ -24,6 +24,7 @@ from web.email_notifications import (
     is_valid_email,
     local_sender_email,
     send_feishu_sync_email,
+    send_github_sync_email,
     send_progress_email,
     send_test_email,
     smtp_password_is_saved,
@@ -1678,6 +1679,83 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
                           summary={"error_code": "source_unavailable"})
             flash(f"GitHub 提取失败：{error}", "error")
         return redirect(url_for("github_activity_page", repository=repository))
+
+    @app.post("/github/send")
+    def send_github_commits():
+        if "user_id" not in session:
+            return redirect(url_for("login"))
+        if not csrf_valid():
+            flash("页面已过期，请刷新后重试。", "error")
+            return redirect(url_for("github_activity_page"))
+
+        selected_repository = session.get("selected_repository")
+        if not selected_repository:
+            flash("请先选择 GitHub 仓库。", "error")
+            return redirect(url_for("select_repository"))
+
+        with database_connection(app.config["DATABASE_PATH"]) as connection:
+            user_row = connection.execute(
+                "SELECT sender_email, notification_email FROM publisher_users WHERE id = ?",
+                (session["user_id"],),
+            ).fetchone()
+        sender_email = (
+            user_row["sender_email"] if user_row else ""
+        ) or local_sender_email()
+        notification_email = user_row["notification_email"] if user_row else ""
+
+        if not notification_email:
+            flash("请先在工作台填写收件人邮箱。", "error")
+            return redirect(url_for("github_activity_page"))
+
+        with database_connection(app.config["DATABASE_PATH"]) as connection:
+            rows = connection.execute(
+                """SELECT sha, github_login, member_name, message, additions,
+                          deletions, changed_files, commit_url, committed_at_utc
+                   FROM github_commits
+                   WHERE repository = ?
+                   ORDER BY committed_at_utc ASC, id ASC""",
+                (selected_repository,),
+            ).fetchall()
+
+        commits = [
+            {
+                "sha": row["sha"],
+                "github_login": row["github_login"],
+                "member_name": row["member_name"],
+                "message": row["message"],
+                "additions": row["additions"],
+                "deletions": row["deletions"],
+                "changed_files": row["changed_files"],
+                "commit_url": row["commit_url"],
+            }
+            for row in rows
+        ]
+        if not commits:
+            flash("当前仓库还没有同步到提交记录，请先同步。", "error")
+            return redirect(url_for("github_activity_page"))
+
+        started = rows[0]["committed_at_utc"]
+        completed = rows[-1]["committed_at_utc"]
+        try:
+            send_github_sync_email(
+                smtp_settings_from_env(sender_email),
+                notification_email,
+                session["display_name"],
+                selected_repository,
+                "succeeded",
+                len(commits),
+                started,
+                completed,
+                commits=commits,
+            )
+        except EmailNotificationError as error:
+            flash(f"发送失败：{error}", "error")
+        else:
+            flash(
+                f"已将 {len(commits)} 条提交记录发送到 {notification_email}。",
+                "success",
+            )
+        return redirect(url_for("github_activity_page"))
 
     @app.get("/notifications")
     def notifications_page():
