@@ -154,6 +154,9 @@
         <span>至少填写一项即可发布</span>
         <div>
           <button class="button-text" type="reset">清空</button>
+          <button class="button-text" type="submit" formaction="{{ url_for('save_progress_draft') }}">
+            保存工作台信息
+          </button>
           <button class="dashboard-primary" type="submit">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21 3-7.2 18-3.9-7.1L3 10zM9.9 13.9 21 3"/></svg>
             发布进展

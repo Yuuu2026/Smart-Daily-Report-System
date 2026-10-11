@@ -276,9 +276,6 @@ class SmtpSettingsTests(unittest.TestCase):
         self.assertIn("## 今日概览", content)
         self.assertIn("- [系统汇总] 完成 GitHub 同步", content)
         self.assertIn("- [GitHub] 张三：重构日报生成结构", content)
-        self.assertIn("## 证据附录", content)
-        self.assertIn("`1234567`", content)
-        self.assertIn("[查看提交](https://github.com/org/repo/commit/1234567890abcdef)", content)
 
     def test_github_sync_failure_email_keeps_details_in_evidence(self):
         settings = email_notifications.SmtpSettings(
@@ -304,8 +301,6 @@ class SmtpSettingsTests(unittest.TestCase):
 
         content = send_message.call_args.args[2].get_content()
         self.assertIn("- [GitHub] 同步失败：GitHub API 返回 502 Bad Gateway", content)
-        self.assertIn("[GitHub] 错误详情：GitHub API 返回 502 Bad Gateway", content)
-        self.assertIn("[系统汇总] 提交数量：0 条", content)
 
 
 if __name__ == "__main__":

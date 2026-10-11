@@ -358,12 +358,25 @@ def send_progress_email(
     next_steps,
     status="已完成",
     source_url="",
+    stream_items=None,
+    stream_label=None,
 ):
-    """发送一条包含本次工作进展的纯文本邮件。"""
+    """发送一条包含工作进展与数据流水的纯文本邮件。"""
     if settings is None:
         raise EmailNotificationError("SMTP 邮件服务未配置。")
     if not is_valid_email(recipient):
         raise EmailNotificationError("通知邮箱格式不正确。")
+
+    stream_items = stream_items or []
+    stream_lines = []
+    for item in stream_items:
+        tag = item.get("tag", "")
+        member = item.get("member", "成员")
+        summary = item.get("summary", "")
+        stream_lines.append(f"- [{tag}] {member}：{summary}")
+    stream_block = ""
+    if stream_lines and stream_label:
+        stream_block = f"\n{stream_label}：\n" + "\n".join(stream_lines)
 
     message = EmailMessage()
     message["Subject"] = f"智能日报：{display_name} 发布了新的任务进展（{work_date}）"
@@ -387,7 +400,7 @@ def send_progress_email(
 
 下一步计划：
 - [成员发布] {next_steps or "（未填写）"}
-
+{stream_block}
 证据：
 - 来源链接：{source_url or "（未填写）"}
 """
@@ -426,13 +439,6 @@ def send_github_sync_email(
     generated_at = datetime.datetime.now().astimezone().strftime("%Y-%m-%d %H:%M")
     total_additions = sum(int(commit.get("additions", 0) or 0) for commit in commits)
     total_deletions = sum(int(commit.get("deletions", 0) or 0) for commit in commits)
-    total_files = sum(int(commit.get("changed_files", 0) or 0) for commit in commits)
-    commit_members = {
-        commit.get("member_name")
-        or commit.get("github_login")
-        or "未知成员"
-        for commit in commits
-    }
 
     completed_items = []
     if succeeded:
@@ -464,34 +470,6 @@ def send_github_sync_email(
             )
         )
 
-    evidence_items = [
-        f"[GitHub] 仓库：{repository}",
-        f"[系统汇总] 同步开始：{started_at}（UTC）",
-        f"[系统汇总] 同步完成：{completed_at}（UTC）",
-        f"[系统汇总] 提交数量：{commit_count} 条",
-    ]
-    if succeeded:
-        evidence_items.extend(
-            [
-                f"[系统汇总] 代码变更：+{total_additions} 行 / -{total_deletions} 行，涉及 {total_files} 个文件",
-                f"[系统汇总] 参与成员：{len(commit_members)} 人",
-            ]
-        )
-        for commit in commits:
-            sha = str(commit.get("sha", ""))[:7] or "无编号"
-            message_lines = str(commit.get("message", "")).splitlines()
-            commit_message = message_lines[0].strip() if message_lines else ""
-            commit_url = str(commit.get("commit_url", ""))
-            evidence = f"[GitHub] `{sha}` · {commit_message or '（无提交说明）'}"
-            evidence += (
-                f" · [查看提交]({commit_url})" if commit_url else " · 未记录提交链接"
-            )
-            evidence_items.append(evidence)
-    else:
-        evidence_items.append(
-            f"[GitHub] 错误详情：{error_message or '（未返回错误详情）'}"
-        )
-
     message.set_content(
         f"""智能日报系统自动生成
 
@@ -500,7 +478,6 @@ def send_github_sync_email(
 同步结果：{status_label}
 数据窗口：最近 24 小时
 数据来源：GitHub 同步 1 次、提交 {commit_count} 条
-生成规则：正文按“提交人 + 工作内容”压缩，明细链接进入证据附录
 
 ## 今日概览
 - [系统汇总] GitHub 仓库同步{status_label}，归档 {commit_count} 条提交。
@@ -508,9 +485,6 @@ def send_github_sync_email(
 
 ## 完成事项
 {chr(10).join(f"- {item}" for item in completed_items)}
-
-## 证据附录
-{chr(10).join(f"- {item}" for item in evidence_items)}
 """
     )
 
@@ -569,22 +543,6 @@ def send_feishu_sync_email(
             "[飞书] " + compact_progress_text(f"同步失败：{error_message or '（未返回错误详情）'}")
         )
 
-    evidence_items = [
-        f"[飞书] 群聊：{chat_name}",
-        f"[系统汇总] 同步开始：{started_at}（UTC）",
-        f"[系统汇总] 同步完成：{completed_at}（UTC）",
-        f"[系统汇总] 获取消息：{message_count} 条，新增记录：{new_count} 条",
-    ]
-    if succeeded:
-        for item in messages:
-            evidence_items.append(
-                f"[飞书] `{item.get('message_id', '未记录编号')}` · "
-                f"{item.get('created_at_utc', '未记录时间')} · "
-                f"{item.get('msg_type', '未知类型')}"
-            )
-    else:
-        evidence_items.append(f"[飞书] 错误详情：{error_message or '（未返回错误详情）'}")
-
     message.set_content(
         f"""智能日报系统自动生成
 
@@ -593,7 +551,6 @@ def send_feishu_sync_email(
 同步结果：{status_label}
 数据窗口：最近 5 分钟
 数据来源：飞书群聊 1 个、消息 {message_count} 条
-生成规则：正文按“发送人 + 群聊内容”压缩，消息编号进入证据附录
 
 ## 今日概览
 - [系统汇总] 飞书群聊「{chat_name}」同步{status_label}。
@@ -601,9 +558,6 @@ def send_feishu_sync_email(
 
 ## 完成事项
 {chr(10).join(f"- {item}" for item in completed_items)}
-
-## 证据附录
-{chr(10).join(f"- {item}" for item in evidence_items)}
 """
     )
     _send_message(settings, recipient, message)

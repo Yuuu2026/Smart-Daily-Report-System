@@ -23,8 +23,6 @@ from web.email_notifications import (
     EmailNotificationError,
     is_valid_email,
     local_sender_email,
-    send_feishu_sync_email,
-    send_github_sync_email,
     send_progress_email,
     send_test_email,
     smtp_password_is_saved,
@@ -194,6 +192,31 @@ def persist_feishu_messages(
         },
     )
     return new_count
+
+
+def _stream_for_publish(connection, selected_source, chat_id, repository):
+    """根据当前数据源查询流水，返回 (stream_label, stream_items)。"""
+    if selected_source == "feishu" and chat_id:
+        rows = connection.execute(
+            """SELECT member_name, summary FROM feishu_messages
+               WHERE chat_id = ? ORDER BY created_at_utc ASC, id ASC""",
+            (chat_id,),
+        ).fetchall()
+        return "飞书群聊消息", [
+            {"tag": "飞书", "member": row["member_name"], "summary": row["summary"]}
+            for row in rows
+        ]
+    if selected_source == "github" and repository:
+        rows = connection.execute(
+            """SELECT member_name, message FROM github_commits
+               WHERE repository = ? ORDER BY committed_at_utc ASC, id ASC""",
+            (repository,),
+        ).fetchall()
+        return "GitHub 提交", [
+            {"tag": "GitHub", "member": row["member_name"], "summary": row["message"]}
+            for row in rows
+        ]
+    return None, []
 
 
 _feishu_auto_sync_stop = None
@@ -1246,49 +1269,37 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
             flash("请先在工作台填写收件人邮箱。", "error")
             return redirect(url_for("feishu_page"))
 
-        with database_connection(app.config["DATABASE_PATH"]) as connection:
-            rows = connection.execute(
-                """SELECT message_id, member_name, msg_type, summary, created_at_utc
-                   FROM feishu_messages
-                   WHERE chat_id = ?
-                   ORDER BY created_at_utc ASC, id ASC""",
-                (chat_id,),
-            ).fetchall()
+        draft = session.get("progress_draft") or {}
+        work_date = draft.get("work_date", "") or datetime.date.today().isoformat()
 
-        messages = [
-            {
-                "message_id": row["message_id"],
-                "member_name": row["member_name"],
-                "msg_type": row["msg_type"],
-                "summary": row["summary"],
-                "created_at_utc": row["created_at_utc"],
-            }
-            for row in rows
-        ]
-        if not messages:
+        with database_connection(app.config["DATABASE_PATH"]) as connection:
+            stream_label, stream_items = _stream_for_publish(
+                connection, "feishu", chat_id, None
+            )
+
+        if not stream_items:
             flash("当前群聊还没有同步到消息，请先同步。", "error")
             return redirect(url_for("feishu_page"))
 
-        started = messages[0]["created_at_utc"]
-        completed = messages[-1]["created_at_utc"]
         try:
-            send_feishu_sync_email(
+            send_progress_email(
                 smtp_settings_from_env(sender_email),
                 notification_email,
                 session["display_name"],
-                chat_name,
-                "succeeded",
-                len(messages),
-                0,
-                started,
-                completed,
-                messages=messages,
+                work_date,
+                draft.get("finished", ""),
+                draft.get("problems", ""),
+                draft.get("next_steps", ""),
+                status=draft.get("status", "已完成"),
+                source_url=draft.get("source_url", ""),
+                stream_items=stream_items,
+                stream_label=stream_label,
             )
         except EmailNotificationError as error:
             flash(f"发送失败：{error}", "error")
         else:
             flash(
-                f"已将 {len(messages)} 条群聊消息发送到 {notification_email}。",
+                f"已将工作台信息与 {len(stream_items)} 条群聊消息发送到 {notification_email}。",
                 "success",
             )
         return redirect(url_for("feishu_page"))
@@ -1509,6 +1520,37 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
             flash(f"测试邮件已从 {sender_email} 发送到 {recipient_email}。", "success")
         return redirect(url_for("home", _anchor="daily-form"))
 
+    @app.post("/save-progress-draft")
+    def save_progress_draft():
+        if "user_id" not in session:
+            return redirect(url_for("login"))
+        if not csrf_valid():
+            flash("页面已过期，请刷新后重试。", "error")
+            return redirect(url_for("home", _anchor="daily-form"))
+        session["progress_draft"] = {
+            "work_date": request.form.get("work_date", "").strip(),
+            "status": request.form.get("status", "已完成").strip() or "已完成",
+            "source_url": request.form.get("source_url", "").strip(),
+            "finished": request.form.get("finished", "").strip(),
+            "problems": request.form.get("problems", "").strip(),
+            "next_steps": request.form.get("next_steps", "").strip(),
+        }
+        sender_email = (
+            request.form.get("sender_email", "").strip() or local_sender_email()
+        )
+        recipient_email = request.form.get(
+            "recipient_email",
+            request.form.get("notification_email", ""),
+        ).strip()
+        smtp_password = request.form.get("smtp_password", "")
+        try:
+            save_email_channel(sender_email, recipient_email, smtp_password)
+        except EmailNotificationError as error:
+            flash(f"工作台信息已保存，但邮箱配置未保存：{error}", "warning")
+        else:
+            flash("工作台信息与邮箱配置已保存，前往飞书群聊或 GitHub 页面发布流水时会一并发送。", "success")
+        return redirect(url_for("home", _anchor="daily-form"))
+
     @app.post("/publish")
     def publish():
         if "user_id" not in session:
@@ -1597,6 +1639,15 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
                 summary={"has_source_url": bool(source_url)},
             )
         if notification_email:
+            stream_label = None
+            stream_items = []
+            with database_connection(app.config["DATABASE_PATH"]) as connection:
+                stream_label, stream_items = _stream_for_publish(
+                    connection,
+                    session.get("selected_source"),
+                    session.get("selected_feishu_chat_id"),
+                    session.get("selected_repository"),
+                )
             try:
                 send_progress_email(
                     smtp_settings_from_env(sender_email),
@@ -1608,6 +1659,8 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
                     next_steps,
                     status=work_status,
                     source_url=source_url,
+                    stream_items=stream_items,
+                    stream_label=stream_label,
                 )
             except EmailNotificationError as error:
                 flash(f"发布成功，但任务完成邮件未发送：{error}", "warning")
@@ -1715,52 +1768,37 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
             flash("请先在工作台填写收件人邮箱。", "error")
             return redirect(url_for("github_activity_page"))
 
-        with database_connection(app.config["DATABASE_PATH"]) as connection:
-            rows = connection.execute(
-                """SELECT sha, github_login, member_name, message, additions,
-                          deletions, changed_files, commit_url, committed_at_utc
-                   FROM github_commits
-                   WHERE repository = ?
-                   ORDER BY committed_at_utc ASC, id ASC""",
-                (selected_repository,),
-            ).fetchall()
+        draft = session.get("progress_draft") or {}
+        work_date = draft.get("work_date", "") or datetime.date.today().isoformat()
 
-        commits = [
-            {
-                "sha": row["sha"],
-                "github_login": row["github_login"],
-                "member_name": row["member_name"],
-                "message": row["message"],
-                "additions": row["additions"],
-                "deletions": row["deletions"],
-                "changed_files": row["changed_files"],
-                "commit_url": row["commit_url"],
-            }
-            for row in rows
-        ]
-        if not commits:
+        with database_connection(app.config["DATABASE_PATH"]) as connection:
+            stream_label, stream_items = _stream_for_publish(
+                connection, "github", None, selected_repository
+            )
+
+        if not stream_items:
             flash("当前仓库还没有同步到提交记录，请先同步。", "error")
             return redirect(url_for("github_activity_page"))
 
-        started = rows[0]["committed_at_utc"]
-        completed = rows[-1]["committed_at_utc"]
         try:
-            send_github_sync_email(
+            send_progress_email(
                 smtp_settings_from_env(sender_email),
                 notification_email,
                 session["display_name"],
-                selected_repository,
-                "succeeded",
-                len(commits),
-                started,
-                completed,
-                commits=commits,
+                work_date,
+                draft.get("finished", ""),
+                draft.get("problems", ""),
+                draft.get("next_steps", ""),
+                status=draft.get("status", "已完成"),
+                source_url=draft.get("source_url", ""),
+                stream_items=stream_items,
+                stream_label=stream_label,
             )
         except EmailNotificationError as error:
             flash(f"发送失败：{error}", "error")
         else:
             flash(
-                f"已将 {len(commits)} 条提交记录发送到 {notification_email}。",
+                f"已将工作台信息与 {len(stream_items)} 条提交记录发送到 {notification_email}。",
                 "success",
             )
         return redirect(url_for("github_activity_page"))
