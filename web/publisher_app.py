@@ -41,7 +41,7 @@ from web.github_source import (
 )
 from web.feishu_source import (
     FeishuSourceError,
-    collect_feishu_last_24_hours,
+    collect_feishu_recent_messages,
     list_feishu_chats,
     store_feishu_app_secret,
 )
@@ -216,7 +216,7 @@ def _feishu_auto_sync_run_once(database_path):
     for user in users:
         started = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
         try:
-            chat_name, messages = collect_feishu_last_24_hours(
+            chat_name, messages = collect_feishu_recent_messages(
                 user["feishu_chat_id"],
                 app_id=user["feishu_app_id"],
             )
@@ -1167,7 +1167,7 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
         started = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
 
         try:
-            chat_name, messages = collect_feishu_last_24_hours(
+            chat_name, messages = collect_feishu_recent_messages(
                 chat_id,
                 app_id=app_id or None,
             )
@@ -1186,7 +1186,7 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
                 )
 
             flash(
-                f"飞书同步完成：最近 24 小时获取 {len(messages)} 条消息，新增 {new_count} 条协作记录。",
+                f"飞书同步完成：最近 5 分钟获取 {len(messages)} 条消息，新增 {new_count} 条协作记录。",
                 "success",
             )
         except FeishuSourceError as error:
@@ -1364,6 +1364,14 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
                     "session",
                     actor_id=user["id"],
                     actor_name=user["display_name"],
+                )
+                connection.execute("DELETE FROM feishu_messages")
+                connection.execute("DELETE FROM github_commits")
+                connection.execute("DELETE FROM feishu_sync_runs")
+                connection.execute("DELETE FROM github_sync_runs")
+                connection.execute(
+                    "DELETE FROM records WHERE category = 'collaborations' AND extra_json LIKE ?",
+                    ('%"source_type": "feishu"%',),
                 )
             return redirect(url_for("select_source"))
         return render_template("login.html")

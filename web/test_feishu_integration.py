@@ -160,7 +160,7 @@ class FeishuIntegrationTests(unittest.TestCase):
             )
 
         with patch(
-            "web.publisher_app.collect_feishu_last_24_hours",
+            "web.publisher_app.collect_feishu_recent_messages",
             return_value=("智能日报项目群", [message]),
         ) as collect, patch(
             "web.email_notifications.send_feishu_sync_email"

@@ -317,8 +317,8 @@ def _resolve_credentials(app_id, app_secret):
     return configured_app_id, configured_secret
 
 
-def collect_feishu_last_24_hours(chat_id, app_id=None, app_secret=None):
-    """获取指定群聊最近 24 小时的消息，并归一为日报协作记录。"""
+def collect_feishu_recent_messages(chat_id, app_id=None, app_secret=None):
+    """获取指定群聊最近 5 分钟的消息，并归一为日报协作记录。"""
     chat_id = (chat_id or "").strip()
     if not re.fullmatch(r"[A-Za-z0-9_-]{5,128}", chat_id):
         raise FeishuSourceError("请先选择有效的飞书群聊。")
@@ -336,7 +336,7 @@ def collect_feishu_last_24_hours(chat_id, app_id=None, app_secret=None):
         members = {}
 
     now = datetime.datetime.now(datetime.timezone.utc)
-    start = now - datetime.timedelta(hours=24)
+    start = now - datetime.timedelta(minutes=5)
     raw_messages = _collect_messages(chat_id, token, start, now)
     chat_name = selected["chat_name"]
     collected_at = now.isoformat(timespec="seconds")

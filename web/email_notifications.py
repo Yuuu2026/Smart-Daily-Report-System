@@ -563,7 +563,7 @@ def send_feishu_sync_email(
                 )
             )
         if not messages:
-            completed_items.append("[飞书] 最近 24 小时没有获取到群聊消息。")
+            completed_items.append("[飞书] 最近 5 分钟没有获取到群聊消息。")
     else:
         completed_items.append(
             "[飞书] " + compact_progress_text(f"同步失败：{error_message or '（未返回错误详情）'}")
@@ -591,7 +591,7 @@ def send_feishu_sync_email(
 发起成员：{display_name}
 生成时间：{generated_at}
 同步结果：{status_label}
-数据窗口：最近 24 小时
+数据窗口：最近 5 分钟
 数据来源：飞书群聊 1 个、消息 {message_count} 条
 生成规则：正文按“发送人 + 群聊内容”压缩，消息编号进入证据附录
 
