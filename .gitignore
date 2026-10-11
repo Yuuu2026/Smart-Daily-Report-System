@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+.smtp.local.json
+.smtp.credentials.json
+.smtp.key
+.feishu.credentials.json
+.feishu.key
+.env
+web/daily_report.db
+.idea/
+.claude/

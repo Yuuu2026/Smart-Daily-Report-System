@@ -1,0 +1,220 @@
+{% extends "dashboard_shell.html" %}
+
+{% block content_class %}feishu-page{% endblock %}
+
+{% block content %}
+  <section class="page-hero feishu-page-hero">
+    <div>
+      <p class="page-eyebrow">FEISHU MESSAGES</p>
+      <h1>飞书群聊</h1>
+      <p>查看已同步的群聊消息流水，并将协作信息归档到日报系统。</p>
+    </div>
+    <div class="page-metric">
+      <strong>{{ item_count }}</strong>
+      <span>条群聊消息</span>
+    </div>
+  </section>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}
+      <p class="flash is-{{ category }} dashboard-flash" role="status">{{ message }}</p>
+    {% endfor %}
+  {% endwith %}
+
+  <section class="feishu-stat-grid" aria-label="飞书数据概览">
+    <article class="github-stat-card">
+      <span class="github-stat-icon is-blue" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5 8 8 0 0 1-3.5-.8L4 20l1.8-4A7.5 7.5 0 1 1 20 11.5Z"/></svg>
+      </span>
+      <div><span>同步消息</span><strong>{{ stats.message_count }}</strong></div>
+    </article>
+    <article class="github-stat-card">
+      <span class="github-stat-icon is-green" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><path d="M12 7v5l3 2"/><circle cx="12" cy="12" r="8.5"/></svg>
+      </span>
+      <div><span>今日消息</span><strong>{{ stats.today_count }}</strong></div>
+    </article>
+    <article class="github-stat-card">
+      <span class="github-stat-icon is-purple" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M3.5 19c.7-3 2.9-4.5 5.5-4.5s4.8 1.5 5.5 4.5"/><path d="M16 8h5M16 11.5h5"/></svg>
+      </span>
+      <div><span>参与成员</span><strong>{{ stats.member_count }}</strong></div>
+    </article>
+    <article class="github-stat-card">
+      <span class="github-stat-icon is-orange" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><path d="M7 8h10M7 12h10M7 16h6"/><path d="M4 4h16v16H4z"/></svg>
+      </span>
+      <div><span>消息类型</span><strong>{{ stats.type_count }}</strong></div>
+    </article>
+  </section>
+
+  <section class="feishu-settings-panel" aria-labelledby="feishu-settings-title">
+    <div class="feishu-settings-copy">
+      <h2 id="feishu-settings-title">群聊接入</h2>
+      <span>App Secret 仅保存在本机凭据存储，不进入数据库</span>
+    </div>
+    <form class="feishu-settings-form" method="post" action="{{ url_for('save_feishu_settings') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label for="feishu-app-id">App ID</label>
+      <input id="feishu-app-id" name="app_id" type="text" value="{{ app_id }}"
+             placeholder="cli_xxxxxxxxxxxxxxxx" autocomplete="off" required>
+      <label for="feishu-app-secret">App Secret</label>
+      <input id="feishu-app-secret" name="app_secret" type="password"
+             placeholder="已保存时可留空" autocomplete="one-time-code">
+      {% if chat_options %}
+        <label for="feishu-chat">群聊</label>
+        <select id="feishu-chat" name="chat_id">
+          {% for option in chat_options %}
+            <option value="{{ option.chat_id }}" {% if option.chat_id == chat_id %}selected{% endif %}>
+              {{ option.chat_name }}
+            </option>
+          {% endfor %}
+        </select>
+      {% endif %}
+      <div class="feishu-settings-actions">
+        <button class="button-text" type="submit" name="action" value="connect">
+          验证并获取群聊
+        </button>
+        {% if chat_options %}
+          <button class="dashboard-primary" type="submit" name="action" value="select">
+            保存群聊并进入工作台
+          </button>
+        {% endif %}
+      </div>
+    </form>
+  </section>
+
+  <section class="github-control-panel" aria-label="筛选飞书消息">
+    <div class="page-filter-copy">
+      <strong>群聊消息筛选</strong>
+      <span>按时间范围查看完整消息流水</span>
+    </div>
+    <form class="github-filter-form" method="get" action="{{ url_for('feishu_page') }}">
+      <label for="feishu-from">开始日期</label>
+      <input id="feishu-from" type="date" name="from" value="{{ date_from or '' }}">
+      <span class="filter-separator" aria-hidden="true">至</span>
+      <label for="feishu-to">结束日期</label>
+      <input id="feishu-to" type="date" name="to" value="{{ date_to or '' }}">
+      {% if query %}<input type="hidden" name="q" value="{{ query }}">{% endif %}
+      <button class="dashboard-primary" type="submit">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m11 4 7 8-7 8M4 12h14"/></svg>
+        应用筛选
+      </button>
+      {% if date_from or date_to or query %}
+        <a class="filter-reset" href="{{ url_for('feishu_page') }}">重置</a>
+      {% endif %}
+    </form>
+  </section>
+
+  <section class="github-sync-strip">
+    <div class="github-sync-status">
+      <span class="github-sync-indicator {% if sync_status and sync_status.status == 'succeeded' %}is-success{% elif sync_status and sync_status.status == 'failed' %}is-error{% endif %}"></span>
+      <div>
+        <strong>
+          {% if sync_status and sync_status.status == 'succeeded' %}最近一次同步成功
+          {% elif sync_status and sync_status.status == 'failed' %}最近一次同步失败
+          {% else %}尚未同步
+          {% endif %}
+        </strong>
+        <span>
+          {% if sync_status %}
+            {{ sync_status.completed_at_utc[:16].replace('T', ' ') }} ·
+            {% if sync_status.status == 'failed' %}{{ sync_status.error_message }}
+            {% else %}获取 {{ sync_status.message_count }} 条消息
+            {% endif %}
+          {% else %}
+            选择群聊后可获取最近 24 小时消息
+          {% endif %}
+        </span>
+        <span class="github-sync-email">
+          {% if notification_email %}
+            已同步消息可一键发送到收件人 {{ notification_email }}
+          {% else %}
+            请先在工作台「邮件收发配置」填写收件人邮箱，即可把消息流水发送给收件人
+          {% endif %}
+        </span>
+      </div>
+    </div>
+    {% if chat_id %}
+      <form method="post" action="{{ url_for('sync_feishu') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="dashboard-primary sync-now-button" type="submit">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6v5h-5M4 18v-5h5M18.5 9A7 7 0 0 0 6 6.5L4 9M5.5 15A7 7 0 0 0 18 17.5l2-2.5"/></svg>
+          立即同步
+        </button>
+        {% if notification_email %}
+          <button class="dashboard-primary sync-now-button" type="submit"
+                  formaction="{{ url_for('send_feishu_messages') }}">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 6 8-4 8 4v12l-8 4-8-4Z"/><path d="m4 6 8 4 8-4M12 10v12"/></svg>
+            发送给收件人
+          </button>
+        {% endif %}
+      </form>
+    {% endif %}
+  </section>
+
+  <section class="page-results" aria-labelledby="feishu-results-title">
+    <div class="page-heading">
+      <div>
+        <h2 id="feishu-results-title">群聊消息流水</h2>
+        <span>{{ chat_name or '全部已同步群聊' }} · 最新消息优先</span>
+      </div>
+      <span class="page-range">当前共 {{ item_count }} 条</span>
+    </div>
+
+    {% if items %}
+      <div class="feishu-message-list">
+        {% for item in items %}
+          <article class="feishu-message-row">
+            <div class="feishu-message-main">
+              <span class="feishu-type-badge">{{ item.message_type }}</span>
+              <div>
+                <h3>{{ item.title }}</h3>
+                {% if item.content and item.content != item.title %}
+                  <p>{{ item.content }}</p>
+                {% endif %}
+                <p class="feishu-message-meta">
+                  {{ item.member }} · {{ item.channel }} · {{ item.local_created_at }}
+                </p>
+              </div>
+            </div>
+            <time datetime="{{ item.created_at }}">{{ item.relative_time }}</time>
+          </article>
+        {% endfor %}
+      </div>
+    {% else %}
+      <section class="archive-empty-state feishu-empty-state">
+        <span class="archive-empty-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5 8 8 0 0 1-3.5-.8L4 20l1.8-4A7.5 7.5 0 1 1 20 11.5Z"/><path d="M8.5 11.5h7M8.5 14.5h4"/></svg>
+        </span>
+        <h2>当前条件下还没有飞书消息</h2>
+        <p>调整时间范围，或在完成群聊接入后同步最近 24 小时消息。</p>
+      </section>
+    {% endif %}
+
+    {% if total_pages > 1 %}
+      <nav class="pagination" aria-label="飞书消息分页">
+        {% if page > 1 %}
+          <a href="{{ url_for('feishu_page', page=page - 1, q=query or none, from=date_from or none, to=date_to or none) }}">上一页</a>
+        {% else %}
+          <span class="is-disabled">上一页</span>
+        {% endif %}
+        <div class="pagination-pages">
+          {% for page_number in page_window %}
+            <a class="{% if page_number == page %}is-current{% endif %}"
+               href="{{ url_for('feishu_page', page=page_number, q=query or none, from=date_from or none, to=date_to or none) }}"
+               {% if page_number == page %}aria-current="page"{% endif %}>{{ page_number }}</a>
+          {% endfor %}
+        </div>
+        {% if page < total_pages %}
+          <a href="{{ url_for('feishu_page', page=page + 1, q=query or none, from=date_from or none, to=date_to or none) }}">下一页</a>
+        {% else %}
+          <span class="is-disabled">下一页</span>
+        {% endif %}
+      </nav>
+      <p class="page-summary">第 {{ page }} / {{ total_pages }} 页</p>
+    {% endif %}
+  </section>
+
+  <footer class="dashboard-footer">飞书消息按北京时间工作日期归档 · 协作记录由系统自动生成</footer>
+{% endblock %}

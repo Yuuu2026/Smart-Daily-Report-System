@@ -1,0 +1,55 @@
+{% extends "dashboard_shell.html" %}
+
+{% block content_class %}sources-page{% endblock %}
+
+{% block content %}
+  <section class="page-hero sources-page-hero">
+    <div>
+      <p class="page-eyebrow">DATA SOURCES</p>
+      <h1>接入设置</h1>
+      <p>选择 GitHub 仓库或飞书群聊作为当前日报数据接口。</p>
+    </div>
+    <div class="page-metric">
+      <strong>2</strong>
+      <span>个可选接口</span>
+    </div>
+  </section>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}
+      <p class="flash is-{{ category }} dashboard-flash" role="status">{{ message }}</p>
+    {% endfor %}
+  {% endwith %}
+
+  <section class="source-choice-grid" aria-label="选择日报数据接口">
+    <article class="source-choice-card {% if github_selected %}is-selected{% endif %}">
+      <div class="source-choice-icon is-github" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><path d="M8.5 19c-4.5 0-5-2.2-5-4.5 0-1.5.6-2.5 1.7-3.2-.3-.8-.3-1.8.2-2.7 1.4 0 2.2.5 2.7 1 1.1-.3 2.2-.4 3.4-.4s2.3.1 3.4.4c.5-.5 1.3-1 2.7-1 .5.9.5 1.9.2 2.7 1.1.7 1.7 1.7 1.7 3.2 0 2.3-.5 4.5-5 4.5M9 19v2m6-2v2M9 15h6"/></svg>
+      </div>
+      <div class="source-choice-copy">
+        <p>GitHub 仓库</p>
+        <strong>{{ selected_repository or '未连接仓库' }}</strong>
+        <span>{% if github_selected %}当前接口 · 已连接仓库{% else %}提交记录与代码变更数据源{% endif %}</span>
+      </div>
+      <a class="dashboard-primary" href="{{ url_for('select_repository') }}">
+        {% if selected_repository %}更换仓库{% else %}选择仓库{% endif %}
+      </a>
+    </article>
+
+    <article class="source-choice-card {% if feishu_selected %}is-selected{% endif %}">
+      <div class="source-choice-icon is-feishu" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5 8 8 0 0 1-3.5-.8L4 20l1.8-4A7.5 7.5 0 1 1 20 11.5Z"/><path d="M8.5 11.5h7M8.5 14.5h4"/></svg>
+      </div>
+      <div class="source-choice-copy">
+        <p>飞书群聊</p>
+        <strong>{{ feishu_chat_name or '未选择群聊' }}</strong>
+        <span>{% if feishu_selected %}当前接口 · 已连接群聊{% else %}群聊消息与协作记录数据源{% endif %}</span>
+      </div>
+      <a class="dashboard-primary" href="{{ url_for('feishu_page') }}">
+        {% if feishu_chat_id %}管理群聊{% else %}配置群聊{% endif %}
+      </a>
+    </article>
+  </section>
+
+  <footer class="dashboard-footer">接口切换只影响当前工作台的来源标识 · 归档保留全部已同步数据</footer>
+{% endblock %}
