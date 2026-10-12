@@ -82,27 +82,20 @@
       <h2>今日工作进展</h2>
       <span>花一点时间记录今天</span>
     </div>
-    <form class="progress-card" method="post" action="{{ url_for('publish') }}">
+    <form class="progress-card" method="post" action="{{ url_for('publish') }}" enctype="multipart/form-data">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <label class="dashboard-work-date" for="work-date">
         <span>{{ today_label }}</span>
         <input id="work-date" type="date" name="work_date" value="{{ today }}" required>
       </label>
-      <div class="progress-meta-grid">
-        <label class="progress-status" for="work-status">
-          <span>工作状态</span>
-          <select id="work-status" name="status">
-            <option value="已完成">已完成</option>
-            <option value="进行中">进行中</option>
-            <option value="阻塞">阻塞</option>
-          </select>
-        </label>
-        <label class="progress-source" for="source-url">
-          <span>证据链接</span>
-          <input id="source-url" type="url" name="source_url" value=""
-                 placeholder="https://github.com/owner/repo/pull/128">
-        </label>
-      </div>
+      <label class="progress-detail" for="report-detail">
+        <span>日报颗粒度</span>
+        <select id="report-detail" name="report_detail">
+          <option value="简洁">简洁</option>
+          <option value="标准" selected>标准</option>
+          <option value="详细">详细</option>
+        </select>
+      </label>
       <label class="progress-question">
         <span class="question-title"><i>1</i>今天完成了什么？</span>
         <textarea name="finished" rows="2"
@@ -117,6 +110,11 @@
         <span class="question-title"><i>3</i>下一步准备做什么？</span>
         <textarea name="next_steps" rows="2"
                   placeholder="例如：验证 QQ 邮箱正式发送流程，产出一次成功发送记录"></textarea>
+      </label>
+      <label class="progress-photos" for="attachments">
+        <span class="question-title"><i>4</i>添加照片</span>
+        <input id="attachments" type="file" name="attachments" accept="image/*" multiple>
+        <small>最多 6 张，支持 JPG、PNG、GIF、WebP；会随日报发送并保存到归档</small>
       </label>
       <div class="email-channel-panel" aria-label="邮件收发配置">
         <div class="email-channel-heading">
@@ -141,29 +139,118 @@
                  placeholder="QQ 邮箱授权码；已保存时可留空" autocomplete="one-time-code">
           <small>授权码不是邮箱登录密码；优先保存到 Windows 凭据管理器，不可用时使用本地加密存储</small>
         </label>
-        <div class="email-channel-actions">
-          <button class="button-text" type="submit" formaction="{{ url_for('save_email_settings') }}">
-            保存邮箱配置
-          </button>
-          <button class="button-text" type="submit" formaction="{{ url_for('test_email_settings') }}">
-            发送测试邮件
-          </button>
-        </div>
       </div>
+      {% if email_deliveries %}
+        <section class="email-delivery-panel" aria-label="最近邮件发送记录">
+          <div class="email-delivery-head">
+            <span>最近发送</span>
+            <small>每次正式发送后都会在这里显示收件邮箱</small>
+          </div>
+          {% for delivery in email_deliveries %}
+            <div class="email-delivery-row {% if delivery.status == 'failed' %}is-error{% endif %}">
+              <span class="email-delivery-dot" aria-hidden="true"></span>
+              <div class="email-delivery-copy">
+                <strong>{{ delivery.recipient_email }}</strong>
+                <small>
+                  {{ delivery.created_at }} · {{ delivery.status_label }}
+                  {% if delivery.error_message %} · {{ delivery.error_message }}{% endif %}
+                </small>
+              </div>
+              <span class="email-delivery-type">{{ delivery.delivery_type }}</span>
+            </div>
+          {% endfor %}
+        </section>
+      {% endif %}
       <div class="progress-actions">
         <span>至少填写一项即可发布</span>
         <div>
-          <button class="button-text" type="reset">清空</button>
-          <button class="button-text" type="submit" formaction="{{ url_for('save_progress_draft') }}">
-            保存工作台信息
+          <button class="button-text" type="submit" name="publish_action" value="save_only">
+            仅保存到日报归档
           </button>
-          <button class="dashboard-primary" type="submit">
+          <button class="dashboard-primary" type="submit" name="publish_action" value="save_send">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21 3-7.2 18-3.9-7.1L3 10zM9.9 13.9 21 3"/></svg>
-            发布进展
+            保存并发送给收件人
           </button>
         </div>
       </div>
     </form>
+  </section>
+
+  <section class="activity-section" id="activity-stream">
+    <div class="section-heading">
+      <h2>同步活动流水</h2>
+      <span>{{ workspace_name }} · 当前共 {{ activity_count }} 条</span>
+    </div>
+
+    <section class="activity-card">
+      <div class="activity-title-row">
+        <h3>{% if session.get('selected_source') == 'github' %}GitHub 提交{% else %}飞书群聊消息{% endif %}</h3>
+        {% if session.get('selected_source') == 'github' %}
+          <form class="sync-form" method="post" action="{{ url_for('sync_github') }}">
+        {% else %}
+          <form class="sync-form" method="post" action="{{ url_for('sync_feishu') }}">
+        {% endif %}
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button class="sync-button" type="submit">立即同步</button>
+        </form>
+      </div>
+
+      {% if sync_status %}
+        <div class="github-sync-strip">
+          <div class="github-sync-status">
+            <span class="github-sync-indicator {% if sync_status.status == 'succeeded' %}is-success{% elif sync_status.status == 'failed' %}is-error{% endif %}"></span>
+            <div>
+              <strong>
+                {% if sync_status.status == 'succeeded' %}最近一次同步成功
+                {% elif sync_status.status == 'failed' %}最近一次同步失败
+                {% else %}尚未同步
+                {% endif %}
+              </strong>
+              <span>
+                {% if sync_status.status == 'failed' %}
+                  {{ sync_status.error_message }}
+                {% elif session.get('selected_source') == 'github' %}
+                  {{ sync_status.completed_at_utc[:16].replace('T', ' ') }} · 获取 {{ sync_status.commit_count }} 条提交
+                {% else %}
+                  {{ sync_status.completed_at_utc[:16].replace('T', ' ') }} · 获取 {{ sync_status.message_count }} 条消息
+                {% endif %}
+              </span>
+            </div>
+          </div>
+        </div>
+      {% endif %}
+
+      {% if activity_items %}
+        <ul class="activity-list">
+          {% for item in activity_items %}
+            <li class="activity-item">
+              <span class="activity-node" aria-hidden="true"></span>
+              <div class="activity-description">
+                {% if item.source_url %}
+                  <a href="{{ item.source_url }}" target="_blank" rel="noopener noreferrer">{{ item.title }}</a>
+                {% else %}
+                  <span class="activity-description-title">{{ item.title }}</span>
+                {% endif %}
+                <p>{{ item.member }}<span>·</span>{{ item.local_created_at }}</p>
+              </div>
+              {% if item.source_type == 'GitHub 提交' %}
+                <div class="activity-changes">
+                  <strong>+{{ item.additions }}</strong>
+                  <strong>−{{ item.deletions }}</strong>
+                  <span>{{ item.changed_files }} 文件</span>
+                </div>
+              {% endif %}
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <div class="activity-empty">
+          <span aria-hidden="true">⌁</span>
+          <strong>当前还没有同步活动</strong>
+          <p>点击“立即同步”拉取{{ 'GitHub 最近 24 小时提交' if session.get('selected_source') == 'github' else '飞书群聊最近 5 分钟消息' }}。</p>
+        </div>
+      {% endif %}
+    </section>
   </section>
 
   <footer class="dashboard-footer">智能日报 · 让团队进展一目了然</footer>

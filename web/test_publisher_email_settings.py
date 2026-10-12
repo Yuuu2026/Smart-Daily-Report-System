@@ -1,6 +1,8 @@
 import tempfile
 import unittest
 import datetime
+import io
+import json
 from pathlib import Path
 from unittest.mock import patch
 
@@ -112,8 +114,8 @@ class PublisherEmailSettingTests(unittest.TestCase):
         github = self.client.get("/github")
 
         self.assertEqual(workbench.status_code, 200)
-        self.assertIn("工作状态", workbench.get_data(as_text=True))
-        self.assertIn("证据链接", workbench.get_data(as_text=True))
+        self.assertIn("日报颗粒度", workbench.get_data(as_text=True))
+        self.assertIn("添加照片", workbench.get_data(as_text=True))
         self.assertEqual(archive.status_code, 200)
         self.assertIn("日报归档", archive.get_data(as_text=True))
         self.assertEqual(github.status_code, 200)
@@ -141,6 +143,106 @@ class PublisherEmailSettingTests(unittest.TestCase):
         self.assertIn("完成事项", archive_text)
         self.assertIn("完成日报归档页与 GitHub 页解耦", archive_text)
         self.assertIn("已完成", archive_text)
+
+    def test_publish_save_send_sends_email_and_archives(self):
+        today = datetime.date.today().isoformat()
+        with patch(
+            "web.publisher_app.smtp_settings_from_env", return_value="configured-smtp"
+        ), patch("web.publisher_app.send_progress_email") as send_progress_email:
+            response = self.client.post(
+                "/publish",
+                data={
+                    "csrf_token": "test-csrf",
+                    "work_date": today,
+                    "status": "已完成",
+                    "finished": "完成工作台与活动流水合并",
+                    "problems": "无阻塞",
+                    "next_steps": "验证一键发送归档",
+                    "sender_email": "3247026746@qq.com",
+                    "recipient_email": "recipient@qq.com",
+                    "publish_action": "save_send",
+                },
+                follow_redirects=False,
+            )
+
+        self.assertEqual(response.status_code, 302)
+        send_progress_email.assert_called_once()
+        with database_connection(self.database_path) as connection:
+            count = connection.execute(
+                "SELECT COUNT(*) FROM published_items WHERE work_date = ?",
+                (today,),
+            ).fetchone()[0]
+        self.assertEqual(count, 1)
+
+    def test_publish_save_only_archives_without_sending_email(self):
+        today = datetime.date.today().isoformat()
+        with patch(
+            "web.publisher_app.smtp_settings_from_env", return_value="configured-smtp"
+        ), patch("web.publisher_app.send_progress_email") as send_progress_email:
+            response = self.client.post(
+                "/publish",
+                data={
+                    "csrf_token": "test-csrf",
+                    "work_date": today,
+                    "status": "进行中",
+                    "finished": "只保存到归档",
+                    "problems": "",
+                    "next_steps": "",
+                    "sender_email": "3247026746@qq.com",
+                    "recipient_email": "recipient@qq.com",
+                    "publish_action": "save_only",
+                },
+                follow_redirects=False,
+            )
+
+        self.assertEqual(response.status_code, 302)
+        send_progress_email.assert_not_called()
+        with database_connection(self.database_path) as connection:
+            count = connection.execute(
+                "SELECT COUNT(*) FROM published_items WHERE work_date = ?",
+                (today,),
+            ).fetchone()[0]
+        self.assertEqual(count, 1)
+
+    def test_publish_saves_photo_attachments(self):
+        today = datetime.date.today().isoformat()
+        upload_folder = Path(self.temp_dir.name) / "uploads"
+        self.app.config["UPLOAD_FOLDER"] = str(upload_folder)
+        with patch(
+            "web.publisher_app.smtp_settings_from_env", return_value="configured-smtp"
+        ), patch("web.publisher_app.send_progress_email") as send_progress_email:
+            response = self.client.post(
+                "/publish",
+                data={
+                    "csrf_token": "test-csrf",
+                    "work_date": today,
+                    "finished": "带照片的日报",
+                    "problems": "",
+                    "next_steps": "",
+                    "sender_email": "",
+                    "recipient_email": "",
+                    "publish_action": "save_only",
+                    "attachments": (
+                        io.BytesIO(b"\xff\xd8\xff\xe0fake-jpeg"),
+                        "progress.jpg",
+                    ),
+                },
+                content_type="multipart/form-data",
+                follow_redirects=False,
+            )
+
+        self.assertEqual(response.status_code, 302)
+        with database_connection(self.database_path) as connection:
+            row = connection.execute(
+                "SELECT attachments FROM published_items WHERE work_date = ?",
+                (today,),
+            ).fetchone()
+        attachments = json.loads(row["attachments"])
+        self.assertEqual(len(attachments), 1)
+        self.assertTrue((upload_folder / attachments[0]).exists())
+        served = self.client.get(f"/uploads/{attachments[0]}")
+        self.assertEqual(served.status_code, 200)
+        served.close()
 
 
 if __name__ == "__main__":

@@ -63,11 +63,30 @@ CREATE TABLE IF NOT EXISTS published_items (
     work_date TEXT NOT NULL,
     title TEXT NOT NULL,
     content TEXT NOT NULL,
+    report_detail TEXT NOT NULL DEFAULT '标准',
+    attachments TEXT NOT NULL DEFAULT '[]',
     source_url TEXT,
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_published_items_work_date
     ON published_items(work_date, id);
+"""
+
+CREATE_EMAIL_DELIVERY_TABLES = """
+CREATE TABLE IF NOT EXISTS email_delivery_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES publisher_users(id),
+    sender_email TEXT NOT NULL DEFAULT '',
+    recipient_email TEXT NOT NULL,
+    subject TEXT NOT NULL DEFAULT '',
+    delivery_type TEXT NOT NULL DEFAULT 'daily_report',
+    status TEXT NOT NULL CHECK (status IN ('sent', 'failed')),
+    work_date TEXT NOT NULL DEFAULT '',
+    error_message TEXT,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_email_delivery_logs_user_created
+    ON email_delivery_logs(user_id, created_at DESC);
 """
 
 CREATE_GITHUB_TABLE = """
@@ -215,6 +234,20 @@ def initialize_database(database_path=DATABASE_PATH):
                     "ALTER TABLE publisher_users "
                     "ADD COLUMN sender_email TEXT NOT NULL DEFAULT ''"
                 )
+            published_columns = {
+                row["name"]
+                for row in connection.execute("PRAGMA table_info(published_items)")
+            }
+            if "report_detail" not in published_columns:
+                connection.execute(
+                    "ALTER TABLE published_items "
+                    "ADD COLUMN report_detail TEXT NOT NULL DEFAULT '标准'"
+                )
+            if "attachments" not in published_columns:
+                connection.execute(
+                    "ALTER TABLE published_items "
+                    "ADD COLUMN attachments TEXT NOT NULL DEFAULT '[]'"
+                )
             for column in ("feishu_app_id", "feishu_chat_id", "feishu_chat_name"):
                 if column not in publisher_columns:
                     connection.execute(
@@ -233,6 +266,7 @@ def initialize_database(database_path=DATABASE_PATH):
             connection.executescript(CREATE_FEISHU_TABLES)
             connection.executescript(CREATE_DAILY_JOB_TABLES)
             connection.executescript(CREATE_V5_AUDIT_TABLE)
+            connection.executescript(CREATE_EMAIL_DELIVERY_TABLES)
     except sqlite3.Error:
         raise DatabaseInitializationError(
             "数据库初始化失败，请检查数据库文件和目录权限。"

@@ -285,6 +285,15 @@ body.dashboard-page {
 .progress-source input { min-width: 0; border: 1px solid #eceef2; border-radius: 10px; padding: 9px 12px; background: #fcfcfd; color: #373b45; font-size: 11px; }
 .progress-status select:focus,
 .progress-source input:focus { border-color: #aeb8ff; background: #fff; box-shadow: 0 0 0 3px rgb(82 103 245 / 9%); outline: none; }
+.progress-detail { display: grid; gap: 7px; color: #777d89; font-size: 11px; font-weight: 500; }
+.progress-detail select { width: 100%; min-width: 0; border: 1px solid #eceef2; border-radius: 10px; padding: 9px 12px; background: #fcfcfd; color: #373b45; font-size: 11px; }
+.progress-detail select:focus { border-color: #aeb8ff; background: #fff; box-shadow: 0 0 0 3px rgb(82 103 245 / 9%); outline: none; }
+.progress-detail small { color: #a1a5af; font-size: 10px; font-weight: 400; }
+.progress-photos { display: grid; gap: 7px; color: #777d89; font-size: 11px; font-weight: 500; }
+.progress-photos input { border: 1px dashed #d6dbea; border-radius: 10px; padding: 11px 12px; background: #fcfcfd; color: #737a86; font-size: 11px; }
+.progress-photos input::file-selector-button { margin-right: 10px; border: 1px solid #e4e8f6; border-radius: 7px; padding: 6px 10px; background: #fff; color: #566ce5; font-size: 10px; font-weight: 650; cursor: pointer; }
+.progress-photos input:focus { border-color: #aeb8ff; background: #fff; box-shadow: 0 0 0 3px rgb(82 103 245 / 9%); outline: none; }
+.progress-photos small { color: #a1a5af; font-size: 10px; font-weight: 400; }
 .progress-question { display: grid; gap: 7px; color: #777d89; font-size: 11px; font-weight: 500; }
 .progress-mail { display: grid; gap: 7px; color: #777d89; font-size: 11px; font-weight: 500; }
 .question-title { display: flex; align-items: center; gap: 7px; }
@@ -300,6 +309,18 @@ body.dashboard-page {
 .email-channel-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding-top: 2px; }
 .email-channel-actions .button-text { border: 1px solid #e7eaf4; border-radius: 8px; padding: 0 10px; background: #fff; }
 .email-channel-actions .button-text:hover { border-color: #ccd4f7; background: #f7f8ff; }
+.email-delivery-panel { display: grid; gap: 9px; border: 1px solid #e9edf6; border-radius: 12px; padding: 12px 13px; background: #fbfcff; }
+.email-delivery-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.email-delivery-head > span { color: #343843; font-size: 11px; font-weight: 700; }
+.email-delivery-head small { color: #a1a5af; font-size: 10px; font-weight: 400; }
+.email-delivery-row { display: flex; min-width: 0; align-items: center; gap: 10px; border-top: 1px solid #eef1f7; padding-top: 9px; }
+.email-delivery-row:first-of-type { border-top: 0; padding-top: 0; }
+.email-delivery-dot { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: #39b887; }
+.email-delivery-row.is-error .email-delivery-dot { background: #e56b6b; }
+.email-delivery-copy { display: grid; min-width: 0; flex: 1 1 auto; gap: 3px; }
+.email-delivery-copy strong { overflow: hidden; color: #333741; font-size: 11px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.email-delivery-copy small { color: #989da7; font-size: 10px; line-height: 1.55; overflow-wrap: anywhere; }
+.email-delivery-type { flex: 0 0 auto; border: 1px solid #e9ecf6; border-radius: 999px; padding: 4px 8px; background: #fff; color: #78819a; font-size: 9px; font-weight: 650; white-space: nowrap; }
 .progress-card textarea { min-height: 61px; border-color: #eceef2; border-radius: 10px; padding: 10px 12px; background: #fcfcfd; color: #373b45; font-size: 11px; line-height: 1.65; }
 .progress-card textarea::placeholder { color: #a1a5af; }
 .progress-card textarea:focus { border-color: #aeb8ff; background: #fff; box-shadow: 0 0 0 3px rgb(82 103 245 / 9%); }
@@ -333,6 +354,7 @@ body.dashboard-page {
 .activity-description { min-width: 0; flex: 1; }
 .activity-description > a { display: block; overflow: hidden; color: #30343d; font-size: 11px; font-weight: 550; text-decoration: none; text-overflow: ellipsis; white-space: nowrap; }
 .activity-description > a:hover { color: #5267e9; }
+.activity-description-title { display: block; overflow: hidden; color: #30343d; font-size: 11px; font-weight: 550; text-overflow: ellipsis; white-space: nowrap; }
 .activity-description p { overflow: hidden; margin: 4px 0 0; color: #9297a1; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 .activity-description p span { padding: 0 3px; color: #bec1c9; }
 .activity-changes { display: flex; flex: 0 0 auto; align-items: center; gap: 12px; color: #9297a1; font-size: 9px; white-space: nowrap; }
@@ -502,6 +524,9 @@ body.dashboard-page {
   .email-channel-grid { grid-template-columns: 1fr; }
   .email-channel-actions { justify-content: space-between; }
   .email-channel-actions .button-text { flex: 1; min-height: 34px; }
+  .email-delivery-head { align-items: flex-start; flex-direction: column; gap: 3px; }
+  .email-delivery-row { align-items: flex-start; }
+  .email-delivery-type { margin-left: auto; }
   .dashboard-work-date input { width: 128px; }
   .progress-card textarea { min-height: 58px; }
   .activity-section { margin-top: 19px; }
@@ -1139,6 +1164,13 @@ body.dashboard-page {
   color: #6878dc;
   white-space: nowrap;
 }
+.archive-report-detail {
+  border-radius: 999px;
+  padding: 3px 7px;
+  background: #f1f4f9;
+  color: #66707f;
+  white-space: nowrap;
+}
 .archive-section-list {
   display: grid;
   gap: 8px;
@@ -1172,6 +1204,27 @@ body.dashboard-page {
   line-height: 1.85;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+.archive-photo-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.archive-photo {
+  display: block;
+  overflow: hidden;
+  width: 96px;
+  height: 72px;
+  border: 1px solid #e3e7f0;
+  border-radius: 9px;
+  background: #f7f8fc;
+}
+.archive-photo img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 .archive-source-link {
   display: inline-flex;

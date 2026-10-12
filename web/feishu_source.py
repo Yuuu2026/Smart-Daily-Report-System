@@ -317,7 +317,7 @@ def _resolve_credentials(app_id, app_secret):
     return configured_app_id, configured_secret
 
 
-def collect_feishu_recent_messages(chat_id, app_id=None, app_secret=None):
+def collect_feishu_recent_messages(chat_id, app_id=None, app_secret=None, chat_name=""):
     """获取指定群聊最近 5 分钟的消息，并归一为日报协作记录。"""
     chat_id = (chat_id or "").strip()
     if not re.fullmatch(r"[A-Za-z0-9_-]{5,128}", chat_id):
@@ -325,10 +325,13 @@ def collect_feishu_recent_messages(chat_id, app_id=None, app_secret=None):
 
     app_id, app_secret = _resolve_credentials(app_id, app_secret)
     token = _tenant_access_token(app_id, app_secret)
-    chats = list_feishu_chats(app_id, app_secret)
-    selected = next((chat for chat in chats if chat["chat_id"] == chat_id), None)
-    if selected is None:
-        raise FeishuSourceError("未找到所选群聊，请确认应用已被拉入该群。")
+    chat_name = (chat_name or "").strip()
+    if not chat_name:
+        chats = list_feishu_chats(app_id, app_secret)
+        selected = next((chat for chat in chats if chat["chat_id"] == chat_id), None)
+        if selected is None:
+            raise FeishuSourceError("未找到所选群聊，请确认应用已被拉入该群。")
+        chat_name = selected["chat_name"]
 
     try:
         members = _chat_members(chat_id, token)
@@ -338,7 +341,6 @@ def collect_feishu_recent_messages(chat_id, app_id=None, app_secret=None):
     now = datetime.datetime.now(datetime.timezone.utc)
     start = now - datetime.timedelta(minutes=5)
     raw_messages = _collect_messages(chat_id, token, start, now)
-    chat_name = selected["chat_name"]
     collected_at = now.isoformat(timespec="seconds")
     results = []
     for item in raw_messages:

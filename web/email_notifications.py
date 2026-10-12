@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 import datetime
 import json
+import mimetypes
 import os
 import re
 import smtplib
@@ -328,6 +329,24 @@ def smtp_settings_from_env(sender_email=None):
     )
 
 
+def _attach_files(message, attachments):
+    """把本地图片文件附加到 EmailMessage，缺失文件会安全跳过。"""
+    for attachment in attachments or []:
+        path = Path(attachment)
+        if not path.is_file():
+            continue
+        content_type = mimetypes.guess_type(str(path))[0] or "application/octet-stream"
+        maintype, _, subtype = content_type.partition("/")
+        if not maintype or not subtype:
+            maintype, subtype = "application", "octet-stream"
+        message.add_attachment(
+            path.read_bytes(),
+            maintype=maintype,
+            subtype=subtype,
+            filename=path.name,
+        )
+
+
 def send_test_email(settings, recipient):
     """发送一封 SMTP 配置测试邮件。"""
     if settings is None:
@@ -360,6 +379,8 @@ def send_progress_email(
     source_url="",
     stream_items=None,
     stream_label=None,
+    report_detail="标准",
+    attachments=None,
 ):
     """发送一条包含工作进展与数据流水的纯文本邮件。"""
     if settings is None:
@@ -379,12 +400,69 @@ def send_progress_email(
         stream_block = f"\n{stream_label}：\n" + "\n".join(stream_lines)
 
     message = EmailMessage()
-    message["Subject"] = f"智能日报：{display_name} 发布了新的任务进展（{work_date}）"
+    message["Subject"] = f"{display_name}+智能日报"
     message["From"] = formataddr(("智能日报", settings.sender))
     message["To"] = recipient.strip()
     generated_at = datetime.datetime.now().astimezone().strftime("%Y-%m-%d %H:%M")
-    message.set_content(
-        f"""智能日报系统自动生成
+    report_detail = report_detail or "标准"
+    detail_label = {
+        "简洁": "简洁",
+        "标准": "标准",
+        "详细": "详细",
+    }.get(report_detail, "标准")
+    if report_detail == "简洁":
+        concise_lines = [
+            part.strip()
+            for part in (finished, problems, next_steps)
+            if part and part.strip()
+        ]
+        progress_text = "；".join(concise_lines) or "（未填写）"
+        body = f"""智能日报系统自动生成
+
+成员：{display_name}
+生成时间：{generated_at}
+工作日期：{work_date}
+工作状态：{status}
+日报粒度：简洁
+数据来源：成员发布
+
+今日进展：
+{progress_text}
+{stream_block}
+来源链接：{source_url or "（未填写）"}
+"""
+    elif report_detail == "详细":
+        finished_text = finished or "（未填写）"
+        problems_text = problems or "（未填写）"
+        next_text = next_steps or "（未填写）"
+        stream_count = len(stream_lines)
+        body = f"""智能日报系统自动生成
+
+成员：{display_name}
+生成时间：{generated_at}
+工作日期：{work_date}
+工作状态：{status}
+日报粒度：详细
+数据来源：成员发布、{stream_label or "未接入数据源"}
+
+系统自动汇总：
+已完成 {1 if finished.strip() else 0} 项主要进展，记录 {1 if problems.strip() else 0} 项问题风险，规划 {1 if next_steps.strip() else 0} 项后续任务。
+
+## 完成事项
+{finished_text}
+
+## 问题与风险
+{problems_text}
+
+## 下一步计划
+{next_text}
+{stream_block}
+## 证据附录
+- 来源链接：{source_url or "（未填写）"}
+- 附带数据流水：{stream_count} 条
+"""
+    else:
+        body = f"""智能日报系统自动生成
 
 成员：{display_name}
 生成时间：{generated_at}
@@ -404,7 +482,10 @@ def send_progress_email(
 证据：
 - 来源链接：{source_url or "（未填写）"}
 """
+    message.set_content(
+        body
     )
+    _attach_files(message, attachments)
 
     _send_message(settings, recipient, message)
 

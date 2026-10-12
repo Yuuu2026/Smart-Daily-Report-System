@@ -172,10 +172,11 @@ class FeishuIntegrationTests(unittest.TestCase):
             )
 
             self.assertEqual(response.status_code, 302)
-            self.assertEqual(response.headers["Location"], "/feishu")
+            self.assertEqual(response.headers["Location"], "/#activity-stream")
             collect.assert_called_once_with(
                 "oc_test_chat",
                 app_id="cli_test_app",
+                chat_name="智能日报项目群",
             )
             send_email.assert_not_called()
 

@@ -80,6 +80,7 @@
               {% else %}
                 <span class="archive-status-badge">{{ item.status }}</span>
                 <span>成员工作日报</span>
+                {% if item.report_detail %}<span class="archive-report-detail">{{ item.report_detail }}</span>{% endif %}
               {% endif %}
             </div>
             {% if item.source_type == '成员日报' and item.sections %}
@@ -93,6 +94,15 @@
               </div>
             {% elif item.content and item.content != item.title %}
               <p class="archive-record-content">{{ item.content }}</p>
+            {% endif %}
+            {% if item.attachments %}
+              <div class="archive-photo-list">
+                {% for photo in item.attachments %}
+                  <a class="archive-photo" href="{{ photo }}" target="_blank" rel="noopener noreferrer">
+                    <img src="{{ photo }}" alt="日报照片" loading="lazy">
+                  </a>
+                {% endfor %}
+              </div>
             {% endif %}
             {% if item.source_url %}
               <a class="archive-source-link" href="{{ item.source_url }}" target="_blank" rel="noopener noreferrer">

@@ -232,6 +232,7 @@ class SmtpSettingsTests(unittest.TestCase):
             )
 
         message = send_message.call_args.args[2]
+        self.assertEqual(message["Subject"], "张三+智能日报")
         content = message.get_content()
         self.assertIn("智能日报系统自动生成", content)
         self.assertIn("- [成员发布] 完成日报结构化渲染", content)
