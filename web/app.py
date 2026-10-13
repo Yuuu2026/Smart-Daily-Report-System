@@ -53,6 +53,8 @@ CREATE TABLE IF NOT EXISTS publisher_users (
     enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
     sender_email TEXT NOT NULL DEFAULT '',
     notification_email TEXT NOT NULL DEFAULT '',
+    notification_email_2 TEXT NOT NULL DEFAULT '',
+    notification_email_3 TEXT NOT NULL DEFAULT '',
     feishu_app_id TEXT NOT NULL DEFAULT '',
     feishu_chat_id TEXT NOT NULL DEFAULT '',
     feishu_chat_name TEXT NOT NULL DEFAULT ''
@@ -234,6 +236,15 @@ def initialize_database(database_path=DATABASE_PATH):
                     "ALTER TABLE publisher_users "
                     "ADD COLUMN sender_email TEXT NOT NULL DEFAULT ''"
                 )
+            for column in (
+                "notification_email_2",
+                "notification_email_3",
+            ):
+                if column not in publisher_columns:
+                    connection.execute(
+                        f"ALTER TABLE publisher_users "
+                        f"ADD COLUMN {column} TEXT NOT NULL DEFAULT ''"
+                    )
             published_columns = {
                 row["name"]
                 for row in connection.execute("PRAGMA table_info(published_items)")

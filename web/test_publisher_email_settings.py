@@ -116,6 +116,7 @@ class PublisherEmailSettingTests(unittest.TestCase):
         self.assertEqual(workbench.status_code, 200)
         self.assertIn("日报颗粒度", workbench.get_data(as_text=True))
         self.assertIn("添加照片", workbench.get_data(as_text=True))
+        self.assertIn("目的邮箱 2", workbench.get_data(as_text=True))
         self.assertEqual(archive.status_code, 200)
         self.assertIn("日报归档", archive.get_data(as_text=True))
         self.assertEqual(github.status_code, 200)
@@ -203,6 +204,51 @@ class PublisherEmailSettingTests(unittest.TestCase):
                 (today,),
             ).fetchone()[0]
         self.assertEqual(count, 1)
+
+    def test_publish_sends_to_multiple_recipients(self):
+        today = datetime.date.today().isoformat()
+        with patch(
+            "web.publisher_app.smtp_settings_from_env", return_value="configured-smtp"
+        ), patch("web.publisher_app.send_progress_email") as send_progress_email:
+            response = self.client.post(
+                "/publish",
+                data={
+                    "csrf_token": "test-csrf",
+                    "work_date": today,
+                    "finished": "验证多人发送",
+                    "problems": "",
+                    "next_steps": "",
+                    "sender_email": "3247026746@qq.com",
+                    "recipient_email": "one@example.com",
+                    "recipient_email_2": "two@example.com",
+                    "recipient_email_3": "three@example.com",
+                    "publish_action": "save_send",
+                },
+                follow_redirects=False,
+            )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(send_progress_email.call_count, 3)
+        with database_connection(self.database_path) as connection:
+            rows = connection.execute(
+                """SELECT recipient_email
+                   FROM email_delivery_logs
+                   WHERE user_id = 1 AND delivery_type = 'daily_report'
+                   ORDER BY id"""
+            ).fetchall()
+            user = connection.execute(
+                """SELECT notification_email,
+                          notification_email_2,
+                          notification_email_3
+                   FROM publisher_users WHERE id = 1"""
+            ).fetchone()
+        self.assertEqual(
+            [row["recipient_email"] for row in rows],
+            ["one@example.com", "two@example.com", "three@example.com"],
+        )
+        self.assertEqual(user["notification_email"], "one@example.com")
+        self.assertEqual(user["notification_email_2"], "two@example.com")
+        self.assertEqual(user["notification_email_3"], "three@example.com")
 
     def test_publish_saves_photo_attachments(self):
         today = datetime.date.today().isoformat()

@@ -103,7 +103,7 @@ class FeishuIntegrationTests(unittest.TestCase):
         )
 
         self.assertEqual(response.status_code, 302)
-        self.assertEqual(response.headers["Location"], "/")
+        self.assertEqual(response.headers["Location"], "/?publish_only=1")
         with database_connection(self.database_path) as connection:
             row = connection.execute(
                 """SELECT feishu_app_id, feishu_chat_id, feishu_chat_name

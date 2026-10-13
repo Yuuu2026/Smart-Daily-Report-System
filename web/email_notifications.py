@@ -400,7 +400,7 @@ def send_progress_email(
         stream_block = f"\n{stream_label}：\n" + "\n".join(stream_lines)
 
     message = EmailMessage()
-    message["Subject"] = f"{display_name}+智能日报"
+    message["Subject"] = f"研一 {display_name} {work_date} 智能日报"
     message["From"] = formataddr(("智能日报", settings.sender))
     message["To"] = recipient.strip()
     generated_at = datetime.datetime.now().astimezone().strftime("%Y-%m-%d %H:%M")

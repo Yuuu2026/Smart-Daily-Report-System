@@ -456,6 +456,24 @@ def _record_email_delivery(
     )
 
 
+def _normalize_recipients(*emails):
+    """规范化多个收件邮箱：去空、去重、校验格式，返回有序列表。"""
+    recipients = []
+    seen = set()
+    for email in emails:
+        address = (email or "").strip()
+        if not address:
+            continue
+        if not is_valid_email(address):
+            raise EmailNotificationError(f"收件邮箱格式不正确：{address}")
+        key = address.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        recipients.append(address)
+    return recipients
+
+
 def _save_uploaded_attachments(files, upload_folder):
     """保存日报照片，返回相对上传目录的 POSIX 路径列表。"""
     if not files:
@@ -673,14 +691,22 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
         expected = session.get("csrf_token", "")
         return bool(supplied and expected and hmac.compare_digest(supplied, expected))
 
-    def save_email_channel(sender_email, recipient_email, smtp_password):
+    def save_email_channel(
+        sender_email,
+        recipient_email,
+        smtp_password,
+        recipient_email_2="",
+        recipient_email_3="",
+    ):
         sender_email = (sender_email or "").strip()
-        recipient_email = (recipient_email or "").strip()
+        recipients = _normalize_recipients(
+            recipient_email,
+            recipient_email_2,
+            recipient_email_3,
+        )
         smtp_password = smtp_password or ""
         if sender_email and not is_valid_email(sender_email):
             raise EmailNotificationError("发件邮箱格式不正确。")
-        if recipient_email and not is_valid_email(recipient_email):
-            raise EmailNotificationError("目的邮箱格式不正确。")
         if smtp_password:
             store_smtp_password(sender_email, smtp_password)
         if sender_email:
@@ -688,12 +714,92 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
         with database_connection(app.config["DATABASE_PATH"]) as connection:
             connection.execute(
                 """UPDATE publisher_users
-                   SET sender_email = ?, notification_email = ?
+                   SET sender_email = ?, notification_email = ?,
+                       notification_email_2 = ?, notification_email_3 = ?
                    WHERE id = ?""",
-                (sender_email, recipient_email, session["user_id"]),
+                (
+                    sender_email,
+                    recipients[0] if len(recipients) > 0 else "",
+                    recipients[1] if len(recipients) > 1 else "",
+                    recipients[2] if len(recipients) > 2 else "",
+                    session["user_id"],
+                ),
             )
         session["sender_email"] = sender_email
-        session["notification_email"] = recipient_email
+        session["notification_email"] = recipients[0] if recipients else ""
+        session["notification_email_2"] = (
+            recipients[1] if len(recipients) > 1 else ""
+        )
+        session["notification_email_3"] = (
+            recipients[2] if len(recipients) > 2 else ""
+        )
+        return recipients
+
+    def deliver_progress_email(
+        sender_email,
+        recipients,
+        delivery_type,
+        work_date,
+        finished,
+        problems,
+        next_steps,
+        status="已完成",
+        source_url="",
+        stream_items=None,
+        stream_label=None,
+        report_detail="标准",
+        attachments=None,
+    ):
+        """给多个收件人分别发送邮件，并逐条记录发送结果。"""
+        settings = smtp_settings_from_env(sender_email)
+        subject = f"研一 {session['display_name']} {work_date} 智能日报"
+        sent = []
+        failed = []
+        for recipient in recipients:
+            try:
+                send_progress_email(
+                    settings,
+                    recipient,
+                    session["display_name"],
+                    work_date,
+                    finished,
+                    problems,
+                    next_steps,
+                    status=status,
+                    source_url=source_url,
+                    stream_items=stream_items,
+                    stream_label=stream_label,
+                    report_detail=report_detail,
+                    attachments=attachments,
+                )
+            except EmailNotificationError as error:
+                with database_connection(app.config["DATABASE_PATH"]) as connection:
+                    _record_email_delivery(
+                        connection,
+                        session["user_id"],
+                        sender_email,
+                        recipient,
+                        subject,
+                        delivery_type,
+                        work_date,
+                        "failed",
+                        str(error),
+                    )
+                failed.append((recipient, str(error)))
+            else:
+                with database_connection(app.config["DATABASE_PATH"]) as connection:
+                    _record_email_delivery(
+                        connection,
+                        session["user_id"],
+                        sender_email,
+                        recipient,
+                        subject,
+                        delivery_type,
+                        work_date,
+                        "sent",
+                    )
+                sent.append(recipient)
+        return sent, failed
 
     @app.get("/uploads/<path:filename>")
     def uploaded_file(filename):
@@ -755,11 +861,15 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
                 session["selected_source"] = "feishu"
                 selected_source = "feishu"
             else:
+                flash("请先选择日报数据接口。", "warning")
                 return redirect(url_for("select_source"))
         if selected_source == "github" and not selected_repository:
-            return redirect(url_for("select_repository"))
+            flash("请先在接入设置中选择 GitHub 仓库。", "warning")
+            return redirect(url_for("select_source"))
         if selected_source == "feishu" and not selected_feishu_chat_id:
-            return redirect(url_for("feishu_page"))
+            flash("请先在接入设置中配置飞书群聊。", "warning")
+            return redirect(url_for("select_source"))
+        publish_only = request.args.get("publish_only") == "1"
         today = datetime.date.today()
         with database_connection(app.config["DATABASE_PATH"]) as connection:
             commit_count = 0
@@ -836,7 +946,9 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
                     (selected_feishu_chat_id,),
                 ).fetchone()
             email_row = connection.execute(
-                "SELECT sender_email, notification_email FROM publisher_users WHERE id = ?",
+                """SELECT sender_email, notification_email,
+                          notification_email_2, notification_email_3
+                   FROM publisher_users WHERE id = ?""",
                 (session["user_id"],),
             ).fetchone()
             delivery_rows = connection.execute(
@@ -850,6 +962,8 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
             ).fetchall()
         sender_email = email_row["sender_email"] or local_sender_email()
         notification_email = email_row["notification_email"]
+        notification_email_2 = email_row["notification_email_2"]
+        notification_email_3 = email_row["notification_email_3"]
         email_deliveries = []
         delivery_type_labels = {
             "daily_report": "日报",
@@ -902,8 +1016,11 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
             sync_status=sync_status,
             sender_email=sender_email,
             notification_email=notification_email,
+            notification_email_2=notification_email_2,
+            notification_email_3=notification_email_3,
             email_deliveries=email_deliveries,
             latest_email_delivery=email_deliveries[0] if email_deliveries else None,
+            publish_only=publish_only,
             active_page="workbench",
             page_title="工作台",
             breadcrumb_title="工作台",
@@ -1338,7 +1455,7 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
             session["selected_feishu_chat_name"] = chat_name
             session["selected_source"] = "feishu"
             flash(f"已接入飞书群聊「{chat_name}」，工作台将展示该群聊协作记录。", "success")
-            return redirect(url_for("home"))
+            return redirect(url_for("home", publish_only=1))
 
         if not entered_app_id:
             flash("飞书 App ID 不能为空。", "error")
@@ -1472,7 +1589,8 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
         with database_connection(app.config["DATABASE_PATH"]) as connection:
             user_row = connection.execute(
                 """SELECT feishu_chat_id, feishu_chat_name,
-                          sender_email, notification_email
+                          sender_email, notification_email,
+                          notification_email_2, notification_email_3
                    FROM publisher_users WHERE id = ?""",
                 (session["user_id"],),
             ).fetchone()
@@ -1487,12 +1605,16 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
         sender_email = (
             user_row["sender_email"] if user_row else ""
         ) or local_sender_email()
-        notification_email = user_row["notification_email"] if user_row else ""
+        recipients = _normalize_recipients(
+            user_row["notification_email"] if user_row else "",
+            user_row["notification_email_2"] if user_row else "",
+            user_row["notification_email_3"] if user_row else "",
+        )
 
         if not chat_id:
             flash("请先选择要发送的飞书群聊。", "error")
             return redirect(url_for("feishu_page"))
-        if not notification_email:
+        if not recipients:
             flash("请先在工作台填写收件人邮箱。", "error")
             return redirect(url_for("feishu_page"))
 
@@ -1508,48 +1630,30 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
             flash("当前群聊还没有同步到消息，请先同步。", "error")
             return redirect(url_for("feishu_page"))
 
-        try:
-            send_progress_email(
-                smtp_settings_from_env(sender_email),
-                notification_email,
-                session["display_name"],
-                work_date,
-                draft.get("finished", ""),
-                draft.get("problems", ""),
-                draft.get("next_steps", ""),
-                status=draft.get("status", "已完成"),
-                source_url=draft.get("source_url", ""),
-                stream_items=stream_items,
-                stream_label=stream_label,
-            )
-        except EmailNotificationError as error:
-            with database_connection(app.config["DATABASE_PATH"]) as connection:
-                _record_email_delivery(
-                    connection,
-                    session["user_id"],
-                    sender_email,
-                    notification_email,
-                    f"{session['display_name']}+智能日报",
-                    "feishu_sync",
-                    work_date,
-                    "failed",
-                    str(error),
-                )
-            flash(f"发送失败：{error}", "error")
-        else:
-            with database_connection(app.config["DATABASE_PATH"]) as connection:
-                _record_email_delivery(
-                    connection,
-                    session["user_id"],
-                    sender_email,
-                    notification_email,
-                    f"{session['display_name']}+智能日报",
-                    "feishu_sync",
-                    work_date,
-                    "sent",
-                )
+        sent, failed = deliver_progress_email(
+            sender_email,
+            recipients,
+            "feishu_sync",
+            work_date,
+            draft.get("finished", ""),
+            draft.get("problems", ""),
+            draft.get("next_steps", ""),
+            status=draft.get("status", "已完成"),
+            source_url=draft.get("source_url", ""),
+            stream_items=stream_items,
+            stream_label=stream_label,
+        )
+        if failed:
             flash(
-                f"已将工作台信息与 {len(stream_items)} 条群聊消息发送到 {notification_email}。",
+                "发送失败："
+                + "；".join(f"{address}：{error}" for address, error in failed),
+                "error",
+            )
+        else:
+            flash(
+                f"已将工作台信息与 {len(stream_items)} 条群聊消息发送到 "
+                + "、".join(sent)
+                + "。",
                 "success",
             )
         return redirect(url_for("feishu_page"))
@@ -1576,7 +1680,7 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
                 ), 400
             session["selected_repository"] = selected_repository
             session["selected_source"] = "github"
-            return redirect(url_for("home"))
+            return redirect(url_for("home", publish_only=1))
         return render_template(
             "repository.html",
             current_repository=session.get("selected_repository", ""),
@@ -1594,6 +1698,7 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
                 user = connection.execute(
                     """SELECT id, username, password_hash, display_name,
                            sender_email, notification_email,
+                           notification_email_2, notification_email_3,
                            feishu_app_id, feishu_chat_id, feishu_chat_name
                        FROM publisher_users WHERE username = ? AND enabled = 1""",
                     (username,),
@@ -1614,6 +1719,8 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
             session["display_name"] = user["display_name"]
             session["sender_email"] = user["sender_email"]
             session["notification_email"] = user["notification_email"]
+            session["notification_email_2"] = user["notification_email_2"]
+            session["notification_email_3"] = user["notification_email_3"]
             session["feishu_app_id"] = user["feishu_app_id"]
             session["selected_feishu_chat_id"] = user["feishu_chat_id"]
             session["selected_feishu_chat_name"] = user["feishu_chat_name"]
@@ -1697,6 +1804,8 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
             session["display_name"] = display_name
             session["sender_email"] = ""
             session["notification_email"] = ""
+            session["notification_email_2"] = ""
+            session["notification_email_3"] = ""
             session["feishu_app_id"] = ""
             session["selected_feishu_chat_id"] = ""
             session["selected_feishu_chat_name"] = ""
@@ -1735,9 +1844,17 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
             "recipient_email",
             request.form.get("notification_email", ""),
         ).strip()
+        recipient_email_2 = request.form.get("recipient_email_2", "").strip()
+        recipient_email_3 = request.form.get("recipient_email_3", "").strip()
         smtp_password = request.form.get("smtp_password", "")
         try:
-            save_email_channel(sender_email, recipient_email, smtp_password)
+            save_email_channel(
+                sender_email,
+                recipient_email,
+                smtp_password,
+                recipient_email_2,
+                recipient_email_3,
+            )
             smtp_settings_from_env(sender_email)
         except EmailNotificationError as error:
             flash(str(error), "warning" if "授权码" in str(error) else "error")
@@ -1760,9 +1877,17 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
             "recipient_email",
             request.form.get("notification_email", ""),
         ).strip()
+        recipient_email_2 = request.form.get("recipient_email_2", "").strip()
+        recipient_email_3 = request.form.get("recipient_email_3", "").strip()
         smtp_password = request.form.get("smtp_password", "")
         try:
-            save_email_channel(sender_email, recipient_email, smtp_password)
+            save_email_channel(
+                sender_email,
+                recipient_email,
+                smtp_password,
+                recipient_email_2,
+                recipient_email_3,
+            )
             send_test_email(smtp_settings_from_env(sender_email), recipient_email)
         except EmailNotificationError as error:
             flash(f"测试邮件未发送：{error}", "error")
@@ -1792,9 +1917,17 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
             "recipient_email",
             request.form.get("notification_email", ""),
         ).strip()
+        recipient_email_2 = request.form.get("recipient_email_2", "").strip()
+        recipient_email_3 = request.form.get("recipient_email_3", "").strip()
         smtp_password = request.form.get("smtp_password", "")
         try:
-            save_email_channel(sender_email, recipient_email, smtp_password)
+            save_email_channel(
+                sender_email,
+                recipient_email,
+                smtp_password,
+                recipient_email_2,
+                recipient_email_3,
+            )
         except EmailNotificationError as error:
             flash(f"工作台信息已保存，但邮箱配置未保存：{error}", "warning")
         else:
@@ -1816,13 +1949,21 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
             "recipient_email",
             request.form.get("notification_email", ""),
         ).strip()
+        recipient_email_2 = request.form.get("recipient_email_2", "").strip()
+        recipient_email_3 = request.form.get("recipient_email_3", "").strip()
         smtp_password = request.form.get("smtp_password", "")
         publish_action = request.form.get("publish_action", "save_send").strip()
         report_detail = request.form.get("report_detail", "标准").strip()
         if report_detail not in {"简洁", "标准", "详细"}:
             report_detail = "标准"
         try:
-            save_email_channel(sender_email, notification_email, smtp_password)
+            recipients = save_email_channel(
+                sender_email,
+                notification_email,
+                smtp_password,
+                recipient_email_2,
+                recipient_email_3,
+            )
         except EmailNotificationError as error:
             flash(str(error), "error")
             return redirect(url_for("home", _anchor="daily-form"))
@@ -1911,7 +2052,7 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
                 work_date=work_date,
                 summary={"has_source_url": bool(source_url)},
             )
-        should_send = publish_action == "save_send" and bool(notification_email)
+        should_send = publish_action == "save_send" and bool(recipients)
         if should_send:
             stream_label = None
             stream_items = []
@@ -1923,56 +2064,36 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
                     session.get("selected_repository"),
                     work_date,
                 )
-            try:
-                send_progress_email(
-                    smtp_settings_from_env(sender_email),
-                    notification_email,
-                    session["display_name"],
-                    work_date,
-                    finished,
-                    problems,
-                    next_steps,
-                    status=work_status,
-                    source_url=source_url,
-                    stream_items=stream_items,
-                    stream_label=stream_label,
-                    report_detail=report_detail,
-                    attachments=[
-                        str(Path(app.config["UPLOAD_FOLDER"]) / path)
-                        for path in attachment_paths
-                    ],
-                )
-            except EmailNotificationError as error:
-                with database_connection(app.config["DATABASE_PATH"]) as connection:
-                    _record_email_delivery(
-                        connection,
-                        session["user_id"],
-                        sender_email,
-                        notification_email,
-                        f"{session['display_name']}+智能日报",
-                        "daily_report",
-                        work_date,
-                        "failed",
-                        str(error),
-                    )
+            sent, failed = deliver_progress_email(
+                sender_email,
+                recipients,
+                "daily_report",
+                work_date,
+                finished,
+                problems,
+                next_steps,
+                status=work_status,
+                source_url=source_url,
+                stream_items=stream_items,
+                stream_label=stream_label,
+                report_detail=report_detail,
+                attachments=[
+                    str(Path(app.config["UPLOAD_FOLDER"]) / path)
+                    for path in attachment_paths
+                ],
+            )
+            if failed:
                 flash(
-                    f"发布成功，但任务完成邮件未发送到 {notification_email}：{error}",
+                    "发布成功，但任务完成邮件未发送到 "
+                    + "、".join(address for address, _ in failed)
+                    + "。",
                     "warning",
                 )
             else:
-                with database_connection(app.config["DATABASE_PATH"]) as connection:
-                    _record_email_delivery(
-                        connection,
-                        session["user_id"],
-                        sender_email,
-                        notification_email,
-                        f"{session['display_name']}+智能日报",
-                        "daily_report",
-                        work_date,
-                        "sent",
-                    )
                 flash(
-                    f"发布成功，日报已保存到归档并发送到 {notification_email}。",
+                    "发布成功，日报已保存到归档并发送到 "
+                    + "、".join(sent)
+                    + "。",
                     "success",
                 )
         elif publish_action == "save_send":
@@ -2067,15 +2188,21 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
 
         with database_connection(app.config["DATABASE_PATH"]) as connection:
             user_row = connection.execute(
-                "SELECT sender_email, notification_email FROM publisher_users WHERE id = ?",
+                """SELECT sender_email, notification_email,
+                          notification_email_2, notification_email_3
+                   FROM publisher_users WHERE id = ?""",
                 (session["user_id"],),
             ).fetchone()
         sender_email = (
             user_row["sender_email"] if user_row else ""
         ) or local_sender_email()
-        notification_email = user_row["notification_email"] if user_row else ""
+        recipients = _normalize_recipients(
+            user_row["notification_email"] if user_row else "",
+            user_row["notification_email_2"] if user_row else "",
+            user_row["notification_email_3"] if user_row else "",
+        )
 
-        if not notification_email:
+        if not recipients:
             flash("请先在工作台填写收件人邮箱。", "error")
             return redirect(url_for("github_activity_page"))
 
@@ -2091,48 +2218,30 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
             flash("当前仓库还没有同步到提交记录，请先同步。", "error")
             return redirect(url_for("github_activity_page"))
 
-        try:
-            send_progress_email(
-                smtp_settings_from_env(sender_email),
-                notification_email,
-                session["display_name"],
-                work_date,
-                draft.get("finished", ""),
-                draft.get("problems", ""),
-                draft.get("next_steps", ""),
-                status=draft.get("status", "已完成"),
-                source_url=draft.get("source_url", ""),
-                stream_items=stream_items,
-                stream_label=stream_label,
-            )
-        except EmailNotificationError as error:
-            with database_connection(app.config["DATABASE_PATH"]) as connection:
-                _record_email_delivery(
-                    connection,
-                    session["user_id"],
-                    sender_email,
-                    notification_email,
-                    f"{session['display_name']}+智能日报",
-                    "github_sync",
-                    work_date,
-                    "failed",
-                    str(error),
-                )
-            flash(f"发送失败：{error}", "error")
-        else:
-            with database_connection(app.config["DATABASE_PATH"]) as connection:
-                _record_email_delivery(
-                    connection,
-                    session["user_id"],
-                    sender_email,
-                    notification_email,
-                    f"{session['display_name']}+智能日报",
-                    "github_sync",
-                    work_date,
-                    "sent",
-                )
+        sent, failed = deliver_progress_email(
+            sender_email,
+            recipients,
+            "github_sync",
+            work_date,
+            draft.get("finished", ""),
+            draft.get("problems", ""),
+            draft.get("next_steps", ""),
+            status=draft.get("status", "已完成"),
+            source_url=draft.get("source_url", ""),
+            stream_items=stream_items,
+            stream_label=stream_label,
+        )
+        if failed:
             flash(
-                f"已将工作台信息与 {len(stream_items)} 条提交记录发送到 {notification_email}。",
+                "发送失败："
+                + "；".join(f"{address}：{error}" for address, error in failed),
+                "error",
+            )
+        else:
+            flash(
+                f"已将工作台信息与 {len(stream_items)} 条提交记录发送到 "
+                + "、".join(sent)
+                + "。",
                 "success",
             )
         return redirect(url_for("github_activity_page"))
