@@ -238,7 +238,7 @@ class SmtpSettingsTests(unittest.TestCase):
         self.assertIn("- [成员发布] 完成日报结构化渲染", content)
         self.assertIn("- [成员发布] 历史数据存在旧标签", content)
         self.assertIn("- [成员发布] 补充证据链接", content)
-        self.assertIn("- 来源链接：https://example.com/report", content)
+        self.assertNotIn("来源链接", content)
 
     def test_github_sync_email_uses_structured_daily_report_format(self):
         settings = email_notifications.SmtpSettings(
@@ -273,8 +273,9 @@ class SmtpSettingsTests(unittest.TestCase):
 
         content = send_message.call_args.args[2].get_content()
         self.assertIn("智能日报系统自动生成", content)
-        self.assertIn("数据窗口：最近 24 小时", content)
-        self.assertIn("## 今日概览", content)
+        self.assertIn("数据窗口", content)
+        self.assertIn("最近 24 小时", content)
+        self.assertIn("今日概览", content)
         self.assertIn("- [系统汇总] 完成 GitHub 同步", content)
         self.assertIn("- [GitHub] 张三：重构日报生成结构", content)
 

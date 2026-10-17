@@ -262,6 +262,7 @@ def _stream_for_publish(connection, selected_source, chat_id, repository, work_d
 
 
 _feishu_auto_sync_stop = None
+_feishu_auto_sync_last_failure = {}
 
 
 def _feishu_auto_sync_run_once(database_path):
@@ -302,9 +303,15 @@ def _feishu_auto_sync_run_once(database_path):
                 f"[飞书自动同步] 用户 {user['display_name']} 群「{chat_name}」："
                 f"获取 {len(messages)} 条，新增 {new_count} 条。"
             )
+            _feishu_auto_sync_last_failure.pop(user["id"], None)
         except FeishuSourceError as error:
             completed = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
             error_message = str(error)[:240]
+            failure_signature = error_message
+            previous_failure = _feishu_auto_sync_last_failure.get(user["id"])
+            _feishu_auto_sync_last_failure[user["id"]] = failure_signature
+            if previous_failure == failure_signature:
+                continue
             try:
                 with database_connection(database_path) as connection:
                     connection.execute(
@@ -681,6 +688,7 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
             "notifications": notifications,
             "unread_notifications": unread_notifications,
             "current_user": {
+                "id": session.get("user_id", ""),
                 "display_name": session.get("display_name", ""),
                 "username": session.get("username", ""),
             },
@@ -850,6 +858,10 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
     def home():
         if "user_id" not in session:
             return redirect(url_for("login"))
+        source_switch = request.args.get("source")
+        if source_switch in ("github", "feishu"):
+            session["selected_source"] = source_switch
+            return redirect(url_for("home"))
         selected_source = session.get("selected_source")
         selected_repository = session.get("selected_repository")
         selected_feishu_chat_id = session.get("selected_feishu_chat_id")
@@ -866,9 +878,11 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
         if selected_source == "github" and not selected_repository:
             flash("请先在接入设置中选择 GitHub 仓库。", "warning")
             return redirect(url_for("select_source"))
-        if selected_source == "feishu" and not selected_feishu_chat_id:
-            flash("请先在接入设置中配置飞书群聊。", "warning")
-            return redirect(url_for("select_source"))
+        # 飞书已选定但未配置群聊时，不再强制跳转到接入设置；
+        # 直接渲染工作台，并在工作台内显示「群聊接入」引导卡片。
+        feishu_needs_setup = bool(
+            selected_source == "feishu" and not selected_feishu_chat_id
+        )
         publish_only = request.args.get("publish_only") == "1"
         today = datetime.date.today()
         with database_connection(app.config["DATABASE_PATH"]) as connection:
@@ -988,16 +1002,15 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
                 "created_at": created_at.astimezone().strftime("%m月%d日 %H:%M"),
             })
         workspace_label = "当前仓库" if selected_source == "github" else "当前群聊"
-        workspace_name = (
-            selected_repository
-            if selected_source == "github"
-            else session.get("selected_feishu_chat_name", "")
-        )
-        workspace_caption = (
-            "已连接 GitHub 仓库"
-            if selected_source == "github"
-            else "已连接飞书群聊"
-        )
+        if selected_source == "github":
+            workspace_name = selected_repository
+            workspace_caption = "已连接 GitHub 仓库"
+        elif feishu_needs_setup:
+            workspace_name = "未选择群聊"
+            workspace_caption = "请先在下方接入飞书群聊"
+        else:
+            workspace_name = session.get("selected_feishu_chat_name", "")
+            workspace_caption = "已连接飞书群聊"
         return render_template(
             "dashboard.html",
             display_name=session["display_name"],
@@ -1005,7 +1018,7 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
             today_label=f"{today.year}年{today.month}月{today.day}日 · 星期{('一', '二', '三', '四', '五', '六', '日')[today.weekday()]}",
             github_repository=workspace_name,
             workspace_label=workspace_label,
-            workspace_name=workspace_name,
+            workspace_display=workspace_name,
             workspace_caption=workspace_caption,
             commit_count=commit_count,
             feishu_message_count=feishu_message_count,
@@ -1021,6 +1034,11 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
             email_deliveries=email_deliveries,
             latest_email_delivery=email_deliveries[0] if email_deliveries else None,
             publish_only=publish_only,
+            feishu_needs_setup=feishu_needs_setup,
+            feishu_app_id=session.get("feishu_app_id") or "",
+            feishu_chat_id=selected_feishu_chat_id or "",
+            feishu_chat_name=session.get("selected_feishu_chat_name") or "",
+            feishu_chat_options=session.get("feishu_chat_options") or [],
             active_page="workbench",
             page_title="工作台",
             breadcrumb_title="工作台",
@@ -1173,6 +1191,9 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
         else:
             repository = session.get("selected_repository", "")
 
+        if repository:
+            session["selected_source"] = "github"
+
         query = request.args.get("q", "").strip().lower()
         page = _parse_page(request.args.get("page"))
         conditions = []
@@ -1302,6 +1323,8 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
                 session["feishu_app_id"] = app_id
                 session["selected_feishu_chat_id"] = chat_id
                 session["selected_feishu_chat_name"] = chat_name
+            if chat_id:
+                session["selected_source"] = "feishu"
 
             conditions = []
             parameters = []
@@ -1439,7 +1462,7 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
             )
             if selected_chat is None:
                 flash("请先获取并选择有效的飞书群聊。", "error")
-                return redirect(url_for("feishu_page"))
+                return redirect(url_for("home"))
 
             app_id = entered_app_id or current_app_id
             chat_name = selected_chat.get("chat_name", "") or "未命名群聊"
@@ -1455,7 +1478,7 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
             session["selected_feishu_chat_name"] = chat_name
             session["selected_source"] = "feishu"
             flash(f"已接入飞书群聊「{chat_name}」，工作台将展示该群聊协作记录。", "success")
-            return redirect(url_for("home", publish_only=1))
+            return redirect(url_for("home"))
 
         if not entered_app_id:
             flash("飞书 App ID 不能为空。", "error")
@@ -1471,7 +1494,7 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
             )
         except FeishuSourceError as error:
             flash(f"飞书接口验证失败：{error}", "error")
-            return redirect(url_for("feishu_page"))
+            return redirect(url_for("home"))
 
         current_chat_id = session.get("selected_feishu_chat_id", "")
         selected_chat = next(
@@ -1498,7 +1521,7 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
             flash("飞书接口验证成功，请选择要接入的群聊。", "success")
         else:
             flash("飞书接口验证成功，但当前应用可见的群聊为空。请先把应用加入群聊。", "warning")
-        return redirect(url_for("feishu_page"))
+        return redirect(url_for("home"))
 
     @app.post("/feishu/sync")
     def sync_feishu():

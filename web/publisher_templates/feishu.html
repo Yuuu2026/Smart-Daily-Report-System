@@ -52,6 +52,7 @@
     <div class="feishu-settings-copy">
       <h2 id="feishu-settings-title">群聊接入</h2>
       <span>App Secret 仅保存在本机凭据存储，不进入数据库</span>
+      <p>读取群消息需开通 im:message、im:message:readonly 或 im:message.history:readonly 中的任意一项，并额外开通 im:message.group_msg；同时请确认应用已发布，并由企业管理员完成授权。</p>
     </div>
     <form class="feishu-settings-form" method="post" action="{{ url_for('save_feishu_settings') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

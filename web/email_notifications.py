@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 import datetime
+import html
 import json
 import mimetypes
 import os
@@ -347,6 +348,90 @@ def _attach_files(message, attachments):
         )
 
 
+def _html_escape(value):
+    """转义邮件正文中的用户输入，避免破坏 HTML 结构。"""
+    return html.escape(str(value or ""), quote=True)
+
+
+def _html_lines(text):
+    """把普通文本转为适合放入 HTML 列表的内容，保留换行。"""
+    return _html_escape(text).replace("\n", "<br>")
+
+
+def _email_section(icon, title, lines, accent="#3d78f5"):
+    """渲染一个带图标、圆角和左侧色条的邮件卡片。"""
+    items = "".join(f"<li>{_html_lines(line)}</li>" for line in lines)
+    return (
+        '<table width="100%" cellpadding="0" cellspacing="0" role="presentation" '
+        f'style="margin:14px 0 0;border-left:4px solid {accent};'
+        'border-radius:10px;background:#f7f9ff;">'
+        '<tr><td style="padding:15px 18px;">'
+        f'<div style="font-size:14px;font-weight:700;color:#26314d;">'
+        f'{icon} {_html_escape(title)}</div>'
+        f'<ul style="margin:10px 0 0;padding-left:18px;color:#46516a;'
+        f'font-size:13px;line-height:1.75;">{items}</ul>'
+        "</td></tr></table>"
+    )
+
+
+def _email_wrapper(header_title, header_subtitle, meta_items, sections, footer_note):
+    """生成浅色卡片式 HTML 邮件，头像区用蓝色渐变和装饰图标。"""
+    meta_chips = ""
+    for label, value in meta_items:
+        meta_chips += (
+            '<div style="display:inline-block;margin:0 8px 8px 0;'
+            'padding:6px 11px;border:1px solid #e2e8ff;border-radius:999px;'
+            'background:#f7f9ff;color:#6b7690;font-size:12px;">'
+            f'<span style="color:#98a2bb;">{_html_escape(label)}</span> '
+            f'<strong style="color:#34405a;font-weight:700;">'
+            f'{_html_escape(value)}</strong></div>'
+        )
+    body_sections = "\n".join(sections)
+    return f"""<!doctype html>
+<html lang="zh-CN">
+<body style="margin:0;padding:0;background-color:#eef3ff;">
+  <table width="100%" cellpadding="0" cellspacing="0" role="presentation"
+         style="background-color:#eef3ff;padding:28px 12px;">
+    <tr>
+      <td align="center">
+        <table width="640" cellpadding="0" cellspacing="0" role="presentation"
+               style="width:100%;max-width:640px;background-color:#ffffff;
+                      border:1px solid #e3e9ff;border-radius:16px;overflow:hidden;">
+          <tr>
+            <td style="background-color:#3d78f5;
+                       background-image:linear-gradient(135deg,rgba(255,255,255,0.16) 25%,transparent 25%),
+                       linear-gradient(225deg,rgba(255,255,255,0.12) 25%,transparent 25%);
+                       background-size:28px 28px;
+                       padding:26px 30px 24px;color:#ffffff;">
+              <div style="font-size:12px;font-weight:700;letter-spacing:2px;
+                          opacity:0.85;">SMART DAILY REPORT</div>
+              <div style="font-size:23px;font-weight:800;margin-top:8px;
+                          line-height:1.3;">{_html_escape(header_title)}</div>
+              <div style="font-size:13px;margin-top:7px;opacity:0.92;
+                          line-height:1.6;">{_html_escape(header_subtitle)}</div>
+              <div style="font-size:18px;letter-spacing:6px;margin-top:14px;
+                          opacity:0.9;">📌 ☑️ 📬</div>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:22px 26px 26px;">
+              <div style="margin-bottom:2px;">{meta_chips}</div>
+              {body_sections}
+              <div style="margin-top:22px;padding-top:16px;border-top:1px solid #eef1f8;
+                          text-align:center;color:#9aa3b8;font-size:11px;line-height:1.7;">
+                🤖 智能日报系统自动生成 · {_html_escape(footer_note)}
+              </div>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+"""
+
+
 def send_test_email(settings, recipient):
     """发送一封 SMTP 配置测试邮件。"""
     if settings is None:
@@ -358,11 +443,34 @@ def send_test_email(settings, recipient):
     message["Subject"] = "智能日报：SMTP 配置测试成功"
     message["From"] = formataddr(("智能日报", settings.sender))
     message["To"] = recipient.strip()
+    generated_at = datetime.datetime.now().astimezone().strftime("%Y-%m-%d %H:%M")
+    sections = [
+        _email_section(
+            "✅",
+            "测试通过",
+            ["SMTP 配置已经可用，可以正常发送日报邮件。"],
+            accent="#22c55e",
+        ),
+        _email_section(
+            "📬",
+            "接下来会发生什么",
+            [
+                "发布工作进展时，系统会按你填写的收件人发送通知邮件。",
+                "同步 GitHub / 飞书仅拉取数据，不会自动发信。",
+            ],
+            accent="#3d78f5",
+        ),
+    ]
+    html_body = _email_wrapper(
+        "SMTP 配置测试成功",
+        "智能日报系统的邮件通道已就绪",
+        [("收件人", recipient.strip()), ("生成时间", generated_at)],
+        sections,
+        f"{generated_at} · 本机邮件配置验证通过",
+    )
     message.set_content(
-        """这封邮件由智能日报系统的工作台邮件配置自动发送。
-
-如果你收到了它，说明本机 SMTP 配置已经可用。发布工作进展时，系统会按你填写的收件人发送通知邮件；同步 GitHub / 飞书仅拉取数据，不会自动发信。
-"""
+        html_body,
+        subtype="html",
     )
     _send_message(settings, recipient, message)
 
@@ -395,9 +503,6 @@ def send_progress_email(
         member = item.get("member", "成员")
         summary = item.get("summary", "")
         stream_lines.append(f"- [{tag}] {member}：{summary}")
-    stream_block = ""
-    if stream_lines and stream_label:
-        stream_block = f"\n{stream_label}：\n" + "\n".join(stream_lines)
 
     message = EmailMessage()
     message["Subject"] = f"研一 {display_name} {work_date} 智能日报"
@@ -410,6 +515,7 @@ def send_progress_email(
         "标准": "标准",
         "详细": "详细",
     }.get(report_detail, "标准")
+    sections = []
     if report_detail == "简洁":
         concise_lines = [
             part.strip()
@@ -417,73 +523,81 @@ def send_progress_email(
             if part and part.strip()
         ]
         progress_text = "；".join(concise_lines) or "（未填写）"
-        body = f"""智能日报系统自动生成
-
-成员：{display_name}
-生成时间：{generated_at}
-工作日期：{work_date}
-工作状态：{status}
-日报粒度：简洁
-数据来源：成员发布
-
-今日进展：
-{progress_text}
-{stream_block}
-来源链接：{source_url or "（未填写）"}
-"""
+        sections.append(
+            _email_section("🟦", "今日进展", [progress_text], accent="#38bdf8")
+        )
+        if stream_lines:
+            sections.append(
+                _email_section("🔁", stream_label or "数据流水", stream_lines, accent="#8b5cf6")
+            )
     elif report_detail == "详细":
         finished_text = finished or "（未填写）"
         problems_text = problems or "（未填写）"
         next_text = next_steps or "（未填写）"
-        stream_count = len(stream_lines)
-        body = f"""智能日报系统自动生成
-
-成员：{display_name}
-生成时间：{generated_at}
-工作日期：{work_date}
-工作状态：{status}
-日报粒度：详细
-数据来源：成员发布、{stream_label or "未接入数据源"}
-
-系统自动汇总：
-已完成 {1 if finished.strip() else 0} 项主要进展，记录 {1 if problems.strip() else 0} 项问题风险，规划 {1 if next_steps.strip() else 0} 项后续任务。
-
-## 完成事项
-{finished_text}
-
-## 问题与风险
-{problems_text}
-
-## 下一步计划
-{next_text}
-{stream_block}
-## 证据附录
-- 来源链接：{source_url or "（未填写）"}
-- 附带数据流水：{stream_count} 条
-"""
+        sections.append(
+            _email_section(
+                "🧮",
+                "系统自动汇总",
+                [
+                    f"已完成 {1 if finished.strip() else 0} 项主要进展，"
+                    f"记录 {1 if problems.strip() else 0} 项问题风险，"
+                    f"规划 {1 if next_steps.strip() else 0} 项后续任务。"
+                ],
+                accent="#38bdf8",
+            )
+        )
+        sections.append(_email_section("✅", "完成事项", [finished_text], accent="#22c55e"))
+        sections.append(_email_section("⚠️", "问题与风险", [problems_text], accent="#f59e0b"))
+        sections.append(_email_section("🧭", "下一步计划", [next_text], accent="#3d78f5"))
+        if stream_lines:
+            sections.append(
+                _email_section("🔁", stream_label or "数据流水", stream_lines, accent="#8b5cf6")
+            )
     else:
-        body = f"""智能日报系统自动生成
+        sections.append(
+            _email_section(
+                "✅",
+                "完成事项",
+                [f"- [成员发布] {finished or '（未填写）'}"],
+                accent="#22c55e",
+            )
+        )
+        sections.append(
+            _email_section(
+                "⚠️",
+                "问题与风险",
+                [f"- [成员发布] {problems or '（未填写）'}"],
+                accent="#f59e0b",
+            )
+        )
+        sections.append(
+            _email_section(
+                "🧭",
+                "下一步计划",
+                [f"- [成员发布] {next_steps or '（未填写）'}"],
+                accent="#3d78f5",
+            )
+        )
+        if stream_lines:
+            sections.append(
+                _email_section("🔁", stream_label or "数据流水", stream_lines, accent="#8b5cf6")
+            )
 
-成员：{display_name}
-生成时间：{generated_at}
-工作日期：{work_date}
-工作状态：{status}
-数据来源：成员发布
-
-完成事项：
-- [成员发布] {finished or "（未填写）"}
-
-问题与风险：
-- [成员发布] {problems or "（未填写）"}
-
-下一步计划：
-- [成员发布] {next_steps or "（未填写）"}
-{stream_block}
-证据：
-- 来源链接：{source_url or "（未填写）"}
-"""
+    html_body = _email_wrapper(
+        f"研一 {display_name} 智能日报",
+        f"{work_date} · {status} · 日报粒度：{detail_label}",
+        [
+            ("成员", display_name),
+            ("日期", work_date),
+            ("状态", status),
+            ("粒度", detail_label),
+        ],
+        sections,
+        f"{generated_at} · 数据来源：成员发布",
+    )
     message.set_content(
-        body
+        html_body,
+        subtype="html",
     )
     _attach_files(message, attachments)
 
@@ -551,22 +665,40 @@ def send_github_sync_email(
             )
         )
 
+    overview_lines = [
+        f"- [系统汇总] GitHub 仓库同步{status_label}，归档 {commit_count} 条提交。",
+        f"- [系统汇总] 代码变更 +{total_additions} 行 / -{total_deletions} 行。",
+    ]
+    completion_lines = [f"- {item}" for item in completed_items]
+    sections = [
+        _email_section(
+            "📊",
+            "今日概览",
+            overview_lines,
+            accent="#38bdf8",
+        ),
+        _email_section(
+            "✅" if succeeded else "❌",
+            "完成事项" if succeeded else "失败详情",
+            completion_lines,
+            accent="#22c55e" if succeeded else "#ef4444",
+        ),
+    ]
+    html_body = _email_wrapper(
+        "GitHub 同步日报",
+        f"{repository} · 同步{status_label}",
+        [
+            ("发起成员", display_name),
+            ("同步结果", status_label),
+            ("数据窗口", "最近 24 小时"),
+            ("数据来源", f"提交 {commit_count} 条"),
+        ],
+        sections,
+        f"{generated_at} · 代码变更 +{total_additions} / -{total_deletions}",
+    )
     message.set_content(
-        f"""智能日报系统自动生成
-
-发起成员：{display_name}
-生成时间：{generated_at}
-同步结果：{status_label}
-数据窗口：最近 24 小时
-数据来源：GitHub 同步 1 次、提交 {commit_count} 条
-
-## 今日概览
-- [系统汇总] GitHub 仓库同步{status_label}，归档 {commit_count} 条提交。
-- [系统汇总] 代码变更 +{total_additions} 行 / -{total_deletions} 行。
-
-## 完成事项
-{chr(10).join(f"- {item}" for item in completed_items)}
-"""
+        html_body,
+        subtype="html",
     )
 
     _send_message(settings, recipient, message)
@@ -624,22 +756,40 @@ def send_feishu_sync_email(
             "[飞书] " + compact_progress_text(f"同步失败：{error_message or '（未返回错误详情）'}")
         )
 
+    overview_lines = [
+        f"- [系统汇总] 飞书群聊「{chat_name}」同步{status_label}。",
+        f"- [系统汇总] 获取消息 {message_count} 条，新增协作记录 {new_count} 条。",
+    ]
+    completion_lines = [f"- {item}" for item in completed_items]
+    sections = [
+        _email_section(
+            "💬",
+            "今日概览",
+            overview_lines,
+            accent="#38bdf8",
+        ),
+        _email_section(
+            "✅" if succeeded else "❌",
+            "消息明细" if succeeded else "失败详情",
+            completion_lines,
+            accent="#22c55e" if succeeded else "#ef4444",
+        ),
+    ]
+    html_body = _email_wrapper(
+        "飞书群聊同步日报",
+        f"{chat_name} · 同步{status_label}",
+        [
+            ("发起成员", display_name),
+            ("同步结果", status_label),
+            ("数据窗口", "最近 5 分钟"),
+            ("数据来源", f"消息 {message_count} 条"),
+        ],
+        sections,
+        f"{generated_at} · 新增协作记录 {new_count} 条",
+    )
     message.set_content(
-        f"""智能日报系统自动生成
-
-发起成员：{display_name}
-生成时间：{generated_at}
-同步结果：{status_label}
-数据窗口：最近 5 分钟
-数据来源：飞书群聊 1 个、消息 {message_count} 条
-
-## 今日概览
-- [系统汇总] 飞书群聊「{chat_name}」同步{status_label}。
-- [系统汇总] 获取消息 {message_count} 条，新增协作记录 {new_count} 条。
-
-## 完成事项
-{chr(10).join(f"- {item}" for item in completed_items)}
-"""
+        html_body,
+        subtype="html",
     )
     _send_message(settings, recipient, message)
 

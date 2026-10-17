@@ -12,6 +12,46 @@
     </div>
     <span class="welcome-orbit" aria-hidden="true"><span></span><span></span><span></span></span>
   </section>
+
+  {% if feishu_needs_setup and not publish_only %}
+  <section class="feishu-settings-panel feishu-setup-banner" aria-labelledby="feishu-setup-title">
+    <div class="feishu-settings-copy">
+      <h2 id="feishu-setup-title">接入飞书群聊</h2>
+      <span>已选择飞书作为数据接口，先接入群聊即可开始使用工作台</span>
+      <p>读取群消息需开通 im:message、im:message:readonly 或 im:message.history:readonly 中的任意一项，并额外开通 im:message.group_msg；同时请确认应用已发布，并由企业管理员完成授权。</p>
+    </div>
+    <form class="feishu-settings-form" method="post" action="{{ url_for('save_feishu_settings') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label for="feishu-app-id">App ID</label>
+      <input id="feishu-app-id" name="app_id" type="text" value="{{ feishu_app_id }}"
+             placeholder="cli_xxxxxxxxxxxxxxxx" autocomplete="off" required>
+      <label for="feishu-app-secret">App Secret</label>
+      <input id="feishu-app-secret" name="app_secret" type="password"
+             placeholder="已保存时可留空" autocomplete="one-time-code">
+      {% if feishu_chat_options %}
+        <label for="feishu-chat">群聊</label>
+        <select id="feishu-chat" name="chat_id">
+          {% for option in feishu_chat_options %}
+            <option value="{{ option.chat_id }}" {% if option.chat_id == feishu_chat_id %}selected{% endif %}>
+              {{ option.chat_name }}
+            </option>
+          {% endfor %}
+        </select>
+      {% endif %}
+      <div class="feishu-settings-actions">
+        <button class="button-text" type="submit" name="action" value="connect">
+          验证并获取群聊
+        </button>
+        {% if feishu_chat_options %}
+          <button class="dashboard-primary" type="submit" name="action" value="select">
+            保存群聊并进入工作台
+          </button>
+        {% endif %}
+      </div>
+    </form>
+  </section>
+  {% endif %}
+
   {% endif %}
 
   {% with messages = get_flashed_messages(with_categories=true) %}
@@ -75,7 +115,7 @@
           <svg viewBox="0 0 24 24"><circle cx="7" cy="6" r="2.5"/><circle cx="17" cy="18" r="2.5"/><path d="M7 8.5v6a3.5 3.5 0 0 0 3.5 3.5h4M17 15.5v-6A3.5 3.5 0 0 0 13.5 6H10"/></svg>
         </span>
       </div>
-      <p class="repository-name" title="{{ workspace_name }}">{{ workspace_name }}</p>
+      <p class="repository-name" title="{{ workspace_display }}">{{ workspace_display }}</p>
       <p class="stat-caption"><span class="connected-dot"></span> {{ workspace_caption }}</p>
     </article>
   </section>
@@ -115,7 +155,7 @@
         <textarea name="next_steps" rows="2"
                   placeholder="例如：验证 QQ 邮箱正式发送流程，产出一次成功发送记录"></textarea>
       </label>
-      <label class="progress-photos" for="attachments">
+      <label class="progress-photos">
         <span class="question-title"><i>4</i>添加照片</span>
         <input id="attachments" type="file" name="attachments" accept="image/*" multiple>
         <small>最多 6 张，支持 JPG、PNG、GIF、WebP；会随日报发送并保存到归档</small>

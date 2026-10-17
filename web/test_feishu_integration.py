@@ -5,6 +5,11 @@ from pathlib import Path
 from unittest.mock import patch
 
 from web.app import database_connection, initialize_database
+from web.feishu_source import (
+    FeishuSourceError,
+    _access_control_hint,
+    _request_json,
+)
 from web.publisher_app import create_publisher_app
 from web.publisher_auth import hash_password
 
@@ -87,7 +92,7 @@ class FeishuIntegrationTests(unittest.TestCase):
             )
 
             self.assertEqual(response.status_code, 302)
-            self.assertEqual(response.headers["Location"], "/feishu")
+            self.assertEqual(response.headers["Location"], "/")
             store_secret.assert_called_once_with("cli_test_app", "test-app-secret")
             list_chats.assert_called_once_with("cli_test_app", "test-app-secret")
 
@@ -103,7 +108,7 @@ class FeishuIntegrationTests(unittest.TestCase):
         )
 
         self.assertEqual(response.status_code, 302)
-        self.assertEqual(response.headers["Location"], "/?publish_only=1")
+        self.assertEqual(response.headers["Location"], "/")
         with database_connection(self.database_path) as connection:
             row = connection.execute(
                 """SELECT feishu_app_id, feishu_chat_id, feishu_chat_name
@@ -241,6 +246,58 @@ class FeishuIntegrationTests(unittest.TestCase):
                 (today,),
             ).fetchone()[0]
         self.assertEqual(count, 1)
+
+
+class FeishuSourceErrorTests(unittest.TestCase):
+    class _Response:
+        def __init__(self, payload):
+            self.payload = payload
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            return False
+
+        def read(self):
+            return self.payload
+
+    def test_access_control_error_returns_actionable_hint(self):
+        payload = (
+            '{"code": 99991663, "msg": "Access denied by access control policy. '
+            'Contact the administrator for assistance."}'
+        ).encode("utf-8")
+
+        with patch("web.feishu_source.urlopen", return_value=self._Response(payload)):
+            with self.assertRaises(FeishuSourceError) as context:
+                _request_json("/im/v1/messages", token="tenant-token")
+
+        message = str(context.exception)
+        self.assertIn("飞书拒绝了群消息读取请求", message)
+        self.assertIn("im:message.group_msg", message)
+        self.assertIn("错误码 99991663", message)
+        self.assertNotIn("Access denied by access control policy", message)
+
+    def test_access_control_hint_mentions_chat_permission_for_chat_path(self):
+        message = _access_control_hint("/im/v1/chats", "99991663")
+
+        self.assertIn("im:chat:readonly", message)
+
+    def test_error_21001_asks_for_admin_approval(self):
+        message = _access_control_hint("/im/v1/messages", 21001)
+
+        self.assertIn("企业管理员", message)
+        self.assertIn("权限审批", message)
+        self.assertIn("im:message.group_msg", message)
+
+    def test_regular_feishu_error_includes_error_code(self):
+        payload = b'{"code": 10001, "msg": "invalid parameter"}'
+
+        with patch("web.feishu_source.urlopen", return_value=self._Response(payload)):
+            with self.assertRaises(FeishuSourceError) as context:
+                _request_json("/im/v1/chats", token="tenant-token")
+
+        self.assertEqual(str(context.exception), "飞书 API 返回错误（错误码 10001）：invalid parameter")
 
 
 if __name__ == "__main__":

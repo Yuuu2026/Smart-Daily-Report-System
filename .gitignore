@@ -12,4 +12,6 @@ uploads/
 .claude/
 .publisher.stdout.log
 .publisher.stderr.log
-.workbuddy/
+.workbuddy/edge_profile/
+.workbuddy/feishu_qr*.png
+.workbuddy/qr_data.txt

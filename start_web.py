@@ -1,6 +1,7 @@
 """Start the archive and publisher sites together from the project root."""
 
 import importlib.util
+import os
 import subprocess
 import sys
 import time
@@ -79,6 +80,14 @@ def main():
                 webbrowser.open(LOGIN_URL)
                 if not running:
                     return 0
+                if os.environ.get("START_WEB_NO_WATCHDOG"):
+                    print("看门狗已禁用（后台常驻模式）：服务将持续运行，直到进程被外部终止。")
+                    try:
+                        while True:
+                            time.sleep(3600)
+                    except KeyboardInterrupt:
+                        print("正在停止网站服务……")
+                        return 0
                 while all(is_ready(url, marker) for _, url, _, marker in SERVICES):
                     for name, process in running.items():
                         if process.poll() is not None:

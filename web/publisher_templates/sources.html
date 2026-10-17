@@ -45,8 +45,8 @@
         <strong>{{ feishu_chat_name or '未选择群聊' }}</strong>
         <span>{% if feishu_selected %}当前接口 · 已连接群聊{% else %}群聊消息与协作记录数据源{% endif %}</span>
       </div>
-      <a class="dashboard-primary" href="{{ url_for('feishu_page') }}">
-        {% if feishu_chat_id %}管理群聊{% else %}配置群聊{% endif %}
+      <a class="dashboard-primary" href="{{ url_for('home', source='feishu') }}">
+        {% if feishu_chat_id %}进入工作台{% else %}配置群聊{% endif %}
       </a>
     </article>
   </section>

@@ -1677,6 +1677,12 @@ body.dashboard-page {
   font-size: 9px;
   line-height: 1.7;
 }
+.feishu-settings-copy p {
+  margin: 4px 0 0;
+  color: #7d8391;
+  font-size: 10px;
+  line-height: 1.65;
+}
 .feishu-settings-form {
   display: grid;
   flex: 1;
@@ -2051,3 +2057,548 @@ body.dashboard-page {
     white-space: normal;
   }
 }
+
+/* ============================================================
+   视觉增强层 v10 —— 增加色彩层次与环境光，填充空白区域
+   仅新增装饰性声明，不改变任何布局结构
+   ============================================================ */
+:root {
+  --v10-indigo: #5b6ef6;
+  --v10-violet: #8b5cf6;
+  --v10-cyan: #22d3ee;
+  --v10-mint: #34d399;
+  --v10-amber: #fbbf24;
+  --v10-rose: #fb7185;
+}
+
+/* 主内容区：多层环境色雾，填充大片留白 */
+body.dashboard-page { background: #f6f8fd; }
+.dashboard-page .dashboard-main {
+  background:
+    radial-gradient(58rem 30rem at 106% -10%, rgb(91 110 246 / 13%), transparent 62%),
+    radial-gradient(44rem 26rem at -8% 10%, rgb(52 211 153 / 11%), transparent 60%),
+    radial-gradient(40rem 24rem at 52% 116%, rgb(139 92 246 / 11%), transparent 62%),
+    #f6f8fd;
+}
+
+/* 侧边栏：竖向渐变 + 柔和投影 */
+.dashboard-page .dashboard-sidebar {
+  border-right-color: #e7eaf5;
+  background: linear-gradient(180deg, #ffffff, #fbfcff 52%, #f6f9ff);
+  box-shadow: 1px 0 0 rgb(231 234 245 / 90%), 20px 0 50px rgb(37 48 92 / 4%);
+}
+
+/* 顶栏：毛玻璃 + 彩色底光 */
+.dashboard-page .dashboard-topbar {
+  background: rgb(255 255 255 / 88%);
+  box-shadow: 0 1px 0 rgb(231 234 245 / 92%), 0 10px 26px rgb(37 48 92 / 5%);
+}
+
+/* 顶部欢迎卡：渐变底 + 动态彩色光斑 */
+.dashboard-page .welcome-card {
+  border-color: #e3e8f8;
+  background:
+    radial-gradient(26rem 13rem at 86% -6%, rgb(91 110 246 / 17%), transparent 62%),
+    radial-gradient(20rem 11rem at 102% 108%, rgb(34 211 238 / 15%), transparent 64%),
+    linear-gradient(118deg, #ffffff, #f9fbff 56%, #f3f8ff);
+  box-shadow: 0 16px 40px rgb(37 48 92 / 8%), inset 0 1px 0 #fff;
+}
+.dashboard-page .welcome-card::after {
+  position: absolute;
+  top: -70px;
+  right: -50px;
+  width: 230px;
+  height: 230px;
+  border-radius: 50%;
+  background: conic-gradient(from 200deg, #6d7ffa, #22d3ee, #34d399, #a78bfa, #6d7ffa);
+  opacity: .17;
+  filter: blur(28px);
+  content: "";
+  pointer-events: none;
+  animation: v10-drift 20s ease-in-out infinite alternate;
+}
+.dashboard-page .welcome-date { color: #6b7bf0; }
+@keyframes v10-drift {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to { transform: translate3d(-28px, 24px, 0) scale(1.14); }
+}
+
+/* 统计卡片：顶部彩色渐变条 + 悬浮发光 */
+.dashboard-page .stat-card {
+  position: relative;
+  overflow: hidden;
+  border-color: #e5e9f5;
+  background: linear-gradient(162deg, #ffffff, #fbfcff 70%, #f7faff);
+  box-shadow: 0 10px 24px rgb(37 48 92 / 5%), inset 0 1px 0 #fff;
+  transition: transform .22s ease, box-shadow .22s ease, border-color .22s ease;
+}
+.dashboard-page .stat-card::before {
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--v10-indigo), var(--v10-violet));
+  content: "";
+}
+.dashboard-page .stat-card:nth-child(2)::before { background: linear-gradient(90deg, var(--v10-mint), var(--v10-cyan)); }
+.dashboard-page .stat-card:nth-child(3)::before { background: linear-gradient(90deg, var(--v10-amber), var(--v10-rose)); }
+.dashboard-page .stat-card:nth-child(4)::before { background: linear-gradient(90deg, var(--v10-violet), #6366f1); }
+.dashboard-page .stat-card:hover {
+  transform: translateY(-3px);
+  border-color: #dde3f6;
+  box-shadow: 0 18px 36px rgb(37 48 92 / 11%);
+}
+.dashboard-page .stat-value { color: #232a3d; }
+.dashboard-page .stat-icon-blue { background: linear-gradient(140deg, #eef1ff, #f5f2ff); box-shadow: 0 4px 10px rgb(91 110 246 / 12%); }
+.dashboard-page .stat-icon-green { background: linear-gradient(140deg, #e9f9f3, #eefcff); box-shadow: 0 4px 10px rgb(52 211 153 / 14%); }
+.dashboard-page .stat-icon-orange { background: linear-gradient(140deg, #fff4e8, #fff0f4); box-shadow: 0 4px 10px rgb(251 146 60 / 14%); }
+.dashboard-page .stat-icon-purple { background: linear-gradient(140deg, #f4eeff, #eef1ff); box-shadow: 0 4px 10px rgb(139 92 246 / 14%); }
+
+/* 区块标题：彩色竖条标识 */
+.dashboard-page .section-heading h2 { position: relative; padding-left: 13px; }
+.dashboard-page .section-heading h2::before {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 4px;
+  height: 15px;
+  transform: translateY(-50%);
+  border-radius: 3px;
+  background: linear-gradient(180deg, var(--v10-indigo), var(--v10-violet));
+  content: "";
+}
+
+/* 主要卡片统一升级为渐变白面 */
+.dashboard-page .progress-card,
+.dashboard-page .activity-card,
+.dashboard-page .archive-filter-card,
+.dashboard-page .archive-result-card,
+.dashboard-page .email-channel-panel,
+.dashboard-page .email-delivery-panel,
+.dashboard-page .github-sync-panel {
+  border-color: #e5e9f5;
+  background: linear-gradient(166deg, #ffffff 0%, #fcfdff 62%, #f7faff 100%);
+  box-shadow: 0 12px 28px rgb(37 48 92 / 6%), inset 0 1px 0 #fff;
+}
+
+/* 成员卡片：表头彩色渐变 + 头像配色轮换 */
+.dashboard-page .archive-result-header {
+  border-bottom-color: #e8ecf8;
+  background: linear-gradient(100deg, #f6f8ff, #f2f7ff 58%, #f1fbf8);
+}
+.dashboard-page .archive-result-card:nth-child(2n) .archive-result-header {
+  background: linear-gradient(100deg, #f5fffb, #f2f9ff 58%, #f4f4ff);
+}
+.dashboard-page .archive-result-header .profile-avatar {
+  border: 0;
+  background: linear-gradient(145deg, #dfe4ff, #eef1ff);
+  box-shadow: 0 6px 14px rgb(91 110 246 / 18%);
+  color: #4a5bea;
+}
+.dashboard-page .archive-result-card:nth-child(3n + 2) .profile-avatar {
+  background: linear-gradient(145deg, #d6f6ea, #eefbf7);
+  box-shadow: 0 6px 14px rgb(52 211 153 / 20%);
+  color: #0f8f69;
+}
+.dashboard-page .archive-result-card:nth-child(3n) .profile-avatar {
+  background: linear-gradient(145deg, #ffe8d3, #fff4e9);
+  box-shadow: 0 6px 14px rgb(251 146 60 / 20%);
+  color: #b96f27;
+}
+.dashboard-page .archive-source-badge {
+  border-color: #e3e8f8;
+  background: linear-gradient(120deg, #f4f6ff, #f7f4ff);
+  color: #5b6be0;
+}
+.dashboard-page .archive-source-badge.is-github {
+  border-color: #dcf1e7;
+  background: linear-gradient(120deg, #eefaf5, #eefafd);
+  color: #128a68;
+}
+
+/* 按钮：渐变 + 发光 */
+.dashboard-page .dashboard-primary {
+  background: linear-gradient(135deg, #5b6ef6, #7c5cf6 56%, #9333ea);
+  box-shadow: 0 6px 16px rgb(91 110 246 / 26%);
+}
+.dashboard-page .dashboard-primary:hover {
+  background: linear-gradient(135deg, #4d60f0, #6a4af0 56%, #8424dd);
+  box-shadow: 0 10px 24px rgb(91 110 246 / 34%);
+}
+.dashboard-page .dashboard-nav-link.is-active {
+  background: linear-gradient(100deg, #eef1ff, #f5f0ff);
+  color: #4a5bea;
+}
+
+/* 空状态：径向彩雾，避免死白 */
+.dashboard-page .archive-empty-state,
+.dashboard-page .archive-empty {
+  border-color: #dfe4f7;
+  background:
+    radial-gradient(26rem 13rem at 50% -8%, rgb(91 110 246 / 9%), transparent 64%),
+    linear-gradient(180deg, #ffffff, #f9fbff);
+}
+.dashboard-page .archive-empty-icon,
+.dashboard-page .empty-mark {
+  border: 0;
+  background: linear-gradient(140deg, #eef1ff, #f7f0ff);
+  box-shadow: 0 8px 18px rgb(91 110 246 / 16%);
+  color: #5b6ef6;
+}
+.dashboard-page .activity-empty span[aria-hidden="true"] { color: #8b8ff0; }
+
+/* 登录/注册页：环境彩雾 + 更亮的卡片 */
+.dashboard-page.auth-page {
+  background:
+    radial-gradient(38rem 24rem at 10% 6%, rgb(91 110 246 / 15%), transparent 62%),
+    radial-gradient(34rem 22rem at 92% 94%, rgb(52 211 153 / 13%), transparent 62%),
+    radial-gradient(30rem 20rem at 78% 4%, rgb(139 92 246 / 12%), transparent 62%),
+    #f5f7fd;
+}
+.dashboard-page .auth-card {
+  background: linear-gradient(168deg, #ffffff, #fbfcff 70%, #f7faff);
+  box-shadow: 0 26px 62px rgb(42 48 70 / 13%), 0 2px 8px rgb(42 48 70 / 4%);
+}
+.dashboard-page .auth-card-mark {
+  border: 0;
+  background: linear-gradient(140deg, #eef1ff, #f6f0ff);
+  box-shadow: 0 8px 18px rgb(91 110 246 / 18%);
+  color: #5b6ef6;
+}
+
+/* 入场动画 */
+@keyframes v10-rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+.dashboard-page .dashboard-content > section,
+.dashboard-page .dashboard-content > .archive-empty-state,
+.dashboard-page .dashboard-content > .archive-empty,
+.dashboard-page .archive-result-card {
+  animation: v10-rise .5s cubic-bezier(.22, .68, .36, 1) both;
+}
+.dashboard-page .dashboard-content > section:nth-child(2) { animation-delay: .06s; }
+.dashboard-page .dashboard-content > section:nth-child(3) { animation-delay: .12s; }
+.dashboard-page .dashboard-content > section:nth-child(4) { animation-delay: .18s; }
+.dashboard-page .dashboard-content > section:nth-child(5) { animation-delay: .24s; }
+
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-page .welcome-card::after { animation: none; }
+  .dashboard-page .dashboard-content > section,
+  .dashboard-page .dashboard-content > .archive-empty-state,
+  .dashboard-page .dashboard-content > .archive-empty,
+  .dashboard-page .archive-result-card { animation: none; }
+}
+
+/* ============================================================
+   视觉增强层 v10.1 —— 加强色彩浓度与卡片内部层次
+   ============================================================ */
+body.dashboard-page { background: #f2f5fd; }
+.dashboard-page .dashboard-main {
+  background:
+    radial-gradient(56rem 30rem at 104% -6%, rgb(91 110 246 / 20%), transparent 64%),
+    radial-gradient(44rem 26rem at -10% 6%, rgb(52 211 153 / 16%), transparent 62%),
+    radial-gradient(42rem 26rem at 46% 112%, rgb(139 92 246 / 17%), transparent 64%),
+    radial-gradient(32rem 20rem at 84% 62%, rgb(34 211 238 / 12%), transparent 66%),
+    #f2f5fd;
+}
+
+/* 归档卡片内容区：淡渐变 + 条目悬浮高亮 */
+.dashboard-page .archive-result-items {
+  background: linear-gradient(180deg, #fdfdff, #fafbff 60%, #f6f9ff);
+}
+.dashboard-page .archive-result-item {
+  border-radius: 12px;
+  padding-right: 14px;
+  padding-left: 18px;
+  transition: background .2s ease;
+}
+.dashboard-page .archive-result-item:hover { background: linear-gradient(100deg, #f3f6ff, #f6f2ff 70%, #f1fbf8); }
+
+/* 「N 条记录」徽标：彩色渐变片 */
+.dashboard-page .archive-total {
+  border: 0;
+  background: linear-gradient(150deg, #5b6ef6, #8b5cf6 60%, #6366f1);
+  box-shadow: 0 12px 26px rgb(91 110 246 / 28%);
+  color: #fff;
+}
+.dashboard-page .archive-total strong { color: #fff; }
+.dashboard-page .archive-total span { color: rgb(255 255 255 / 82%); }
+.dashboard-page .archive-result-count {
+  border: 0;
+  background: linear-gradient(120deg, #eef1ff, #f5f0ff);
+  color: #5b6be0;
+}
+
+/* 日期筛选卡：彩色左边线与渐变 */
+.dashboard-page .archive-filter-card {
+  border-left: 3px solid transparent;
+  border-image: linear-gradient(180deg, #5b6ef6, #8b5cf6, #22d3ee) 1 / 0 0 0 3px;
+  background:
+    radial-gradient(22rem 9rem at 96% 0%, rgb(91 110 246 / 12%), transparent 66%),
+    linear-gradient(104deg, #ffffff, #fbfcff 55%, #f6faff);
+}
+
+/* 表单控件：彩色聚焦光晕 */
+.dashboard-page input:focus,
+.dashboard-page select:focus,
+.dashboard-page textarea:focus {
+  box-shadow: 0 0 0 4px rgb(91 110 246 / 14%);
+}
+.dashboard-page .progress-question i {
+  border: 0;
+  background: linear-gradient(140deg, #5b6ef6, #8b5cf6);
+  box-shadow: 0 4px 10px rgb(91 110 246 / 24%);
+  color: #fff;
+}
+
+/* 活动流水节点：彩色渐变光点 */
+.dashboard-page .activity-node {
+  border: 0;
+  background: linear-gradient(140deg, #5b6ef6, #22d3ee);
+  box-shadow: 0 0 0 4px rgb(91 110 246 / 12%);
+}
+.dashboard-page .github-sync-strip {
+  border-radius: 12px;
+  background: linear-gradient(100deg, #f5f8ff, #f7f4ff 60%, #f1fbf8);
+}
+
+/* 邮箱配置面板与发送记录：淡彩底 */
+.dashboard-page .email-channel-panel {
+  background:
+    radial-gradient(20rem 8rem at 100% 0%, rgb(139 92 246 / 10%), transparent 68%),
+    linear-gradient(160deg, #ffffff, #fafbff 70%, #f6f9ff);
+}
+.dashboard-page .email-delivery-row {
+  border-radius: 10px;
+  transition: background .2s ease;
+}
+.dashboard-page .email-delivery-row:hover { background: linear-gradient(100deg, #f4f7ff, #f8f3ff); }
+
+/* 侧边栏当前工作空间：彩底卡片 */
+.dashboard-page .sidebar-workspace {
+  background: linear-gradient(150deg, #f2f5ff, #f7f2ff 62%, #eefaf6);
+  box-shadow: 0 8px 20px rgb(91 110 246 / 10%), inset 0 1px 0 #fff;
+}
+.dashboard-page .sidebar-workspace-icon {
+  border: 0;
+  background: linear-gradient(140deg, #5b6ef6, #8b5cf6);
+  box-shadow: 0 6px 14px rgb(91 110 246 / 26%);
+  color: #fff;
+}
+
+/* ============================================================
+   视觉增强层 v10.2 —— 提高环境色浓度 + 极淡点阵纹理
+   ============================================================ */
+body.dashboard-page { background: #edf1fb; }
+.dashboard-page .dashboard-main {
+  position: relative;
+  background:
+    radial-gradient(54rem 30rem at 102% -4%, rgb(91 110 246 / 26%), transparent 66%),
+    radial-gradient(42rem 26rem at -12% 4%, rgb(52 211 153 / 21%), transparent 64%),
+    radial-gradient(44rem 26rem at 44% 110%, rgb(139 92 246 / 22%), transparent 66%),
+    radial-gradient(30rem 18rem at 86% 58%, rgb(34 211 238 / 16%), transparent 68%),
+    #eef2fc;
+}
+.dashboard-page .dashboard-main::before {
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(rgb(91 110 246 / 9%) 1px, transparent 1px);
+  background-size: 22px 22px;
+  content: "";
+  pointer-events: none;
+  -webkit-mask-image: linear-gradient(180deg, #000 0, rgb(0 0 0 / 35%) 42%, transparent 78%);
+  mask-image: linear-gradient(180deg, #000 0, rgb(0 0 0 / 35%) 42%, transparent 78%);
+}
+.dashboard-page .dashboard-main > * { position: relative; z-index: 1; }
+.dashboard-page .dashboard-sidebar { z-index: 2; }
+
+/* 归档结果区外框：让白色卡片区不再整片发白 */
+.dashboard-page .archive-results-section .archive-results {
+  border-radius: 18px;
+}
+.dashboard-page .archive-result-card {
+  background: linear-gradient(168deg, #ffffff 0%, #fcfdff 60%, #f6faff 100%);
+}
+
+/* ============================================================
+   视觉增强层 v10.3 —— 卡片内部色彩：时间轴色轨、左侧彩边、交替淡彩行
+   ============================================================ */
+/* 成员卡片：左侧渐变彩边（按序号轮换配色） */
+.dashboard-page .archive-result-card {
+  box-shadow:
+    inset 3px 0 0 0 rgb(91 110 246 / 58%),
+    0 14px 32px rgb(37 48 92 / 7%),
+    inset 0 1px 0 #fff;
+}
+.dashboard-page .archive-result-card:nth-child(3n + 2) {
+  box-shadow:
+    inset 3px 0 0 0 rgb(52 211 153 / 62%),
+    0 14px 32px rgb(37 48 92 / 7%),
+    inset 0 1px 0 #fff;
+}
+.dashboard-page .archive-result-card:nth-child(3n) {
+  box-shadow:
+    inset 3px 0 0 0 rgb(251 146 60 / 62%),
+    0 14px 32px rgb(37 48 92 / 7%),
+    inset 0 1px 0 #fff;
+}
+
+/* 条目时间轴色轨 */
+.dashboard-page .archive-result-items { position: relative; }
+.dashboard-page .archive-result-items::before {
+  position: absolute;
+  top: 20px;
+  bottom: 20px;
+  left: 19px;
+  width: 2px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, rgb(91 110 246 / 42%), rgb(139 92 246 / 30%) 52%, rgb(52 211 153 / 44%));
+  content: "";
+  pointer-events: none;
+}
+.dashboard-page .archive-result-item::before {
+  box-shadow: 0 0 0 3px rgb(255 255 255 / 92%);
+}
+
+/* 条目交替淡彩行，减少整片纯白 */
+.dashboard-page .archive-result-item:nth-child(odd) {
+  background: linear-gradient(100deg, rgb(243 246 255 / 80%), rgb(248 244 255 / 46%) 54%, rgb(240 250 247 / 72%));
+}
+.dashboard-page .archive-result-item:nth-child(even) {
+  background: linear-gradient(100deg, rgb(255 255 255 / 0%), rgb(246 249 255 / 62%));
+}
+
+/* 首页统计区与进度卡：角落彩色光晕 */
+.dashboard-page .dashboard-stats { position: relative; }
+.dashboard-page .progress-card { position: relative; overflow: hidden; }
+.dashboard-page .progress-card::after {
+  position: absolute;
+  top: -60px;
+  right: -40px;
+  width: 200px;
+  height: 200px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgb(139 92 246 / 26%), transparent 66%);
+  content: "";
+  pointer-events: none;
+}
+.dashboard-page .activity-card { position: relative; overflow: hidden; }
+.dashboard-page .activity-card::after {
+  position: absolute;
+  top: -70px;
+  right: -50px;
+  width: 220px;
+  height: 220px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgb(34 211 238 / 24%), transparent 66%);
+  content: "";
+  pointer-events: none;
+}
+
+/* 修正：进度卡内有原生下拉框，避免 overflow 裁切下拉层 */
+.dashboard-page .progress-card { overflow: visible; }
+.dashboard-page .progress-card::after { top: 0; right: 0; }
+.dashboard-page .progress-card { border-radius: 17px; }
+
+/* ============================================================
+   工作台交互增强：照片预览、草稿恢复提示
+   ============================================================ */
+.dashboard-page .photo-pick-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.dashboard-page .photo-pick-list:empty { display: none; }
+.dashboard-page .photo-pick-item {
+  position: relative;
+  display: grid;
+  width: 74px;
+  gap: 4px;
+  border: 1px solid #e4e8f6;
+  border-radius: 10px;
+  padding: 5px;
+  background: linear-gradient(160deg, #ffffff, #f7faff);
+  box-shadow: 0 4px 12px rgb(37 48 92 / 6%);
+  text-align: center;
+}
+.dashboard-page .photo-pick-item img {
+  width: 100%;
+  height: 54px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: #f1f3fb;
+}
+.dashboard-page .photo-pick-item em {
+  overflow: hidden;
+  color: #737a86;
+  font-size: 9px;
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dashboard-page .photo-pick-item button {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  display: grid;
+  width: 18px;
+  min-height: 18px;
+  height: 18px;
+  place-items: center;
+  border: 1px solid #fff;
+  border-radius: 50%;
+  padding: 0;
+  background: linear-gradient(140deg, #f87171, #ef4444);
+  box-shadow: 0 3px 8px rgb(239 68 68 / 34%);
+  color: #fff;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+}
+.dashboard-page .photo-pick-item button:hover { background: linear-gradient(140deg, #ef4444, #dc2626); }
+.dashboard-page .photo-pick-tip {
+  margin: 0;
+  color: #8b93a3;
+  font-size: 10px;
+}
+.dashboard-page .draft-restore-hint {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 12px;
+  border: 1px solid #dbe4ff;
+  border-radius: 11px;
+  padding: 9px 13px;
+  background: linear-gradient(100deg, #eef2ff, #f5f0ff 60%, #eefaf6);
+  color: #4b57c9;
+  font-size: 11px;
+  font-weight: 600;
+  box-shadow: 0 6px 16px rgb(91 110 246 / 10%);
+}
+.dashboard-page .draft-restore-hint button {
+  min-height: 26px;
+  border: 1px solid #cfd8f7;
+  border-radius: 8px;
+  padding: 0 10px;
+  background: rgb(255 255 255 / 86%);
+  box-shadow: none;
+  color: #4b57c9;
+  font-size: 10px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.dashboard-page .draft-restore-hint button:hover {
+  background: #fff;
+  box-shadow: 0 4px 10px rgb(91 110 246 / 14%);
+}
+
+/* ============================================================
+   工作台内「飞书群聊接入」引导卡片（feishu_needs_setup）
+   ============================================================ */
+.dashboard-page .feishu-setup-banner {
+  border-left: 4px solid transparent;
+  border-image: linear-gradient(180deg, #5b6ef6, #8b5cf6, #22d3ee) 1 / 0 0 0 4px;
+}
+.dashboard-page .feishu-setup-banner .feishu-settings-copy h2 { color: #4a5bea; }
+.dashboard-page .feishu-setup-banner .feishu-settings-copy span { color: #5b6be0; }

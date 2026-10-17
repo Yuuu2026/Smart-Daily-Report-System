@@ -44,7 +44,7 @@ class ReportGenerationTests(unittest.TestCase):
         self.assertIn("内容偏粗", joined)
         self.assertIn("内容偏细", joined)
 
-    def test_render_structured_report_has_labels_metadata_and_evidence(self):
+    def test_render_structured_report_has_labels_and_metadata(self):
         groups = {
             "张三": {
                 "commits": [],
@@ -91,8 +91,7 @@ class ReportGenerationTests(unittest.TestCase):
         self.assertIn("- [GitHub] owner/repo：重构日报生成逻辑", report)
         self.assertIn("- [成员发布] 已完成：完成日报正文分层", report)
         self.assertIn("- [协作记录] 课程群：", report)
-        self.assertIn("## 证据附录", report)
-        self.assertIn("`abcdef1` · owner/repo · 重构日报生成逻辑", report)
+        self.assertNotIn("## 证据附录", report)
 
     def test_build_report_text_uses_database_sources(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -125,8 +124,8 @@ class ReportGenerationTests(unittest.TestCase):
 
             self.assertIn("[成员发布] 已完成：完成日报结构化渲染", report)
             self.assertIn("[GitHub] owner/repo：同步日报数据", report)
-            self.assertIn("[查看提交](https://example.com/commit)", report)
-            self.assertIn("[查看来源](https://example.com/report)", report)
+            self.assertNotIn("## 证据附录", report)
+            self.assertNotIn("查看提交", report)
 
 
 if __name__ == "__main__":

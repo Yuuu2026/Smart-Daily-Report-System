@@ -16,10 +16,52 @@ LOCAL_FEISHU_CREDENTIALS_PATH = PROJECT_ROOT / ".feishu.credentials.json"
 LOCAL_FEISHU_KEY_PATH = PROJECT_ROOT / ".feishu.key"
 KEYRING_SERVICE_NAME = "Smart Daily Report Feishu"
 BEIJING_TZ = datetime.timezone(datetime.timedelta(hours=8))
+ACCESS_CONTROL_MESSAGE = "Access denied by access control policy"
 
 
 class FeishuSourceError(Exception):
     """可直接展示给用户的飞书接入错误。"""
+
+
+def _access_control_hint(path, code):
+    """把飞书常见的访问控制错误转换成可执行的配置步骤。"""
+    error_code = f"（错误码 {code}）" if code not in (None, "", 0) else ""
+    if code == 21001:
+        base = (
+            f"飞书拒绝了该请求{error_code}：应用尚未获得企业授权，"
+            "当前接口所需的权限没有被企业管理员审批通过。"
+        )
+        if path.startswith("/im/v1/messages"):
+            return (
+                base
+                + "请到飞书开放平台“权限管理”开通 im:message、im:message:readonly 或 "
+                "im:message.history:readonly 中的任意一项，并额外开通 im:message.group_msg；"
+                "然后在“版本管理与发布”发布应用，并联系企业管理员完成权限审批。"
+            )
+        if path.startswith("/im/v1/chats"):
+            return (
+                base
+                + "请到飞书开放平台“权限管理”开通 im:chat、im:chat:readonly 或 "
+                "im:chat.group_info:readonly 中的任意一项，发布应用后联系企业管理员完成审批。"
+            )
+        return base + "请发布应用并联系企业管理员，为应用完成所需权限的授权与审批。"
+    if path.startswith("/im/v1/messages"):
+        return (
+            f"飞书拒绝了群消息读取请求{error_code}。请到飞书开放平台完成以下配置后重试："
+            "1. 在“权限管理”中开通 im:message、im:message:readonly 或 "
+            "im:message.history:readonly 中的任意一项，并额外开通 im:message.group_msg；"
+            "2. 确认机器人已被拉进目标群聊；"
+            "3. 确认应用版本已发布，并联系企业管理员为应用完成权限授权/审批。"
+        )
+    if path.startswith("/im/v1/chats"):
+        return (
+            f"飞书拒绝了群列表访问请求{error_code}。请开通 im:chat、im:chat:readonly 或 "
+            "im:chat.group_info:readonly 中的任意一项，并确认应用已由管理员授权。"
+        )
+    return (
+        f"飞书拒绝了该接口请求{error_code}。请到飞书开放平台检查当前接口所需权限，"
+        "确认应用版本已发布，并联系企业管理员完成授权。"
+    )
 
 
 def _normalize_secret(value):
@@ -75,11 +117,15 @@ def _local_app_secret(app_id):
     if not LOCAL_FEISHU_CREDENTIALS_PATH.exists():
         return ""
     try:
+        from cryptography.fernet import Fernet, InvalidToken
+    except ImportError as error:
+        raise FeishuSourceError(
+            "当前 Python 环境缺少 cryptography，无法读取飞书 App Secret。"
+        ) from error
+    try:
         data = json.loads(LOCAL_FEISHU_CREDENTIALS_PATH.read_text(encoding="utf-8"))
         if data.get("app_id") != app_id:
             return ""
-        from cryptography.fernet import InvalidToken
-
         cipher = _fernet_cipher()
         return cipher.decrypt(data["app_secret"].encode("ascii")).decode("utf-8")
     except (OSError, json.JSONDecodeError, KeyError, InvalidToken, ValueError):
@@ -176,6 +222,14 @@ def _request_json(path, payload=None, token=None, query=None):
 
     if not isinstance(result, dict) or result.get("code") not in (0, None):
         message = result.get("msg", "未知错误") if isinstance(result, dict) else "响应格式无效"
+        code = result.get("code") if isinstance(result, dict) else None
+        is_access_control = isinstance(result, dict) and (
+            code == 21001 or ACCESS_CONTROL_MESSAGE.lower() in str(message).lower()
+        )
+        if is_access_control:
+            raise FeishuSourceError(_access_control_hint(path, code)) from None
+        if code not in (None, "", 0):
+            raise FeishuSourceError(f"飞书 API 返回错误（错误码 {code}）：{message}")
         raise FeishuSourceError(f"飞书 API 返回错误：{message}")
     return result
 

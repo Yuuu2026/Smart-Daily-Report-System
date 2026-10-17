@@ -221,7 +221,6 @@ def render_structured_report(
             f"{len(github_rows)} 条、成员发布 {len(published_rows)} 条、"
             f"任务记录 {task_count} 条、协作记录 {collaboration_count} 条"
         ),
-        "> 生成规则：正文按“工作对象 + 完成内容 + 状态/证据”压缩，明细链接进入证据附录",
         "",
         "## 今日概览",
         (
@@ -311,36 +310,6 @@ def render_structured_report(
             else:
                 lines.append(f"- [系统汇总] {empty_text}")
             lines.append("")
-
-    lines.extend(["## 证据附录", "", "### GitHub 提交"])
-    if github_rows:
-        for row in github_rows:
-            sha = _value(row, "sha")
-            sha_text = sha[:7] if sha else "未记录编号"
-            repository = _value(row, "repository", "未记录仓库")
-            message = _first_line(_value(row, "message"))
-            commit_url = _value(row, "commit_url")
-            evidence = f"- `{sha_text}` · {repository} · {message}"
-            evidence += f" · [查看提交]({commit_url})" if commit_url else " · 未记录提交链接"
-            lines.append(evidence)
-    else:
-        lines.append(f"- [系统汇总] {empty_text}")
-    lines.append("")
-
-    lines.append("### 成员发布")
-    if published_rows:
-        for row in published_rows:
-            member = _value(row, "member")
-            title = _value(row, "title", "今日工作进展")
-            source_url = _value(row, "source_url")
-            created_at = _value(row, "created_at")
-            evidence = f"- {member} · {title}"
-            if created_at:
-                evidence += f" · 发布时间 {created_at}"
-            evidence += f" · [查看来源]({source_url})" if source_url else " · 未填写来源链接"
-            lines.append(evidence)
-    else:
-        lines.append(f"- [系统汇总] {empty_text}")
 
     return "\n".join(lines).rstrip() + "\n"
 
