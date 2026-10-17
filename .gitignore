@@ -10,3 +10,6 @@ web/daily_report.db
 uploads/
 .idea/
 .claude/
+.publisher.stdout.log
+.publisher.stderr.log
+.workbuddy/
