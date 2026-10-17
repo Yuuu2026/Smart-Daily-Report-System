@@ -875,13 +875,19 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
             else:
                 flash("请先选择日报数据接口。", "warning")
                 return redirect(url_for("select_source"))
-        if selected_source == "github" and not selected_repository:
-            flash("请先在接入设置中选择 GitHub 仓库。", "warning")
-            return redirect(url_for("select_source"))
+        # GitHub 已选定但未选择仓库时，不再强制跳转到接入设置；
+        # 直接渲染工作台，并在工作台内显示「仓库接入」引导卡片。
+        github_needs_setup = bool(
+            selected_source == "github" and not selected_repository
+        )
         # 飞书已选定但未配置群聊时，不再强制跳转到接入设置；
         # 直接渲染工作台，并在工作台内显示「群聊接入」引导卡片。
         feishu_needs_setup = bool(
             selected_source == "feishu" and not selected_feishu_chat_id
+        )
+        # 已选定群聊后，仍支持从工作台重新唤出「群聊选择」面板（切换群聊）。
+        feishu_reselect = bool(
+            selected_source == "feishu" and request.args.get("reselect_chat") == "1"
         )
         publish_only = request.args.get("publish_only") == "1"
         today = datetime.date.today()
@@ -1002,9 +1008,12 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
                 "created_at": created_at.astimezone().strftime("%m月%d日 %H:%M"),
             })
         workspace_label = "当前仓库" if selected_source == "github" else "当前群聊"
-        if selected_source == "github":
+        if selected_source == "github" and selected_repository:
             workspace_name = selected_repository
             workspace_caption = "已连接 GitHub 仓库"
+        elif selected_source == "github":
+            workspace_name = "未选择仓库"
+            workspace_caption = "请先在下方接入 GitHub 仓库"
         elif feishu_needs_setup:
             workspace_name = "未选择群聊"
             workspace_caption = "请先在下方接入飞书群聊"
@@ -1034,7 +1043,10 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
             email_deliveries=email_deliveries,
             latest_email_delivery=email_deliveries[0] if email_deliveries else None,
             publish_only=publish_only,
+            github_needs_setup=github_needs_setup,
+            current_repository=session.get("selected_repository") or "",
             feishu_needs_setup=feishu_needs_setup,
+            feishu_reselect=feishu_reselect,
             feishu_app_id=session.get("feishu_app_id") or "",
             feishu_chat_id=selected_feishu_chat_id or "",
             feishu_chat_name=session.get("selected_feishu_chat_name") or "",
@@ -1521,6 +1533,9 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
             flash("飞书接口验证成功，请选择要接入的群聊。", "success")
         else:
             flash("飞书接口验证成功，但当前应用可见的群聊为空。请先把应用加入群聊。", "warning")
+        # 若来自工作台的「切换群聊」，验证后保持面板展开，便于直接选择目标群聊。
+        if request.form.get("reselect") == "1":
+            return redirect(url_for("home", reselect_chat=1))
         return redirect(url_for("home"))
 
     @app.post("/feishu/sync")
@@ -1703,7 +1718,7 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
                 ), 400
             session["selected_repository"] = selected_repository
             session["selected_source"] = "github"
-            return redirect(url_for("home", publish_only=1))
+            return redirect(url_for("home"))
         return render_template(
             "repository.html",
             current_repository=session.get("selected_repository", ""),

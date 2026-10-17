@@ -13,15 +13,16 @@
     <span class="welcome-orbit" aria-hidden="true"><span></span><span></span><span></span></span>
   </section>
 
-  {% if feishu_needs_setup and not publish_only %}
+  {% if (feishu_needs_setup or feishu_reselect) and not publish_only %}
   <section class="feishu-settings-panel feishu-setup-banner" aria-labelledby="feishu-setup-title">
     <div class="feishu-settings-copy">
-      <h2 id="feishu-setup-title">接入飞书群聊</h2>
-      <span>已选择飞书作为数据接口，先接入群聊即可开始使用工作台</span>
+      <h2 id="feishu-setup-title">{% if feishu_reselect %}切换飞书群聊{% else %}接入飞书群聊{% endif %}</h2>
+      <span>{% if feishu_reselect %}重新获取并选择要切换到的群聊{% else %}已选择飞书作为数据接口，先接入群聊即可开始使用工作台{% endif %}</span>
       <p>读取群消息需开通 im:message、im:message:readonly 或 im:message.history:readonly 中的任意一项，并额外开通 im:message.group_msg；同时请确认应用已发布，并由企业管理员完成授权。</p>
     </div>
     <form class="feishu-settings-form" method="post" action="{{ url_for('save_feishu_settings') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="reselect" value="{% if feishu_reselect %}1{% endif %}">
       <label for="feishu-app-id">App ID</label>
       <input id="feishu-app-id" name="app_id" type="text" value="{{ feishu_app_id }}"
              placeholder="cli_xxxxxxxxxxxxxxxx" autocomplete="off" required>
@@ -44,9 +45,32 @@
         </button>
         {% if feishu_chat_options %}
           <button class="dashboard-primary" type="submit" name="action" value="select">
-            保存群聊并进入工作台
+            {% if feishu_reselect %}保存并切换群聊{% else %}保存群聊并进入工作台{% endif %}
           </button>
         {% endif %}
+        {% if feishu_reselect %}
+          <a class="button-text" href="{{ url_for('home') }}">取消</a>
+        {% endif %}
+      </div>
+    </form>
+  </section>
+  {% endif %}
+
+  {% if github_needs_setup and not publish_only %}
+  <section class="github-settings-panel github-setup-banner" aria-labelledby="github-setup-title">
+    <div class="github-settings-copy">
+      <h2 id="github-setup-title">接入 GitHub 仓库</h2>
+      <span>已选择 GitHub 作为数据接口，先连接仓库即可开始使用工作台</span>
+      <p>填写团队正在协作的仓库地址（owner/repository 或完整 URL），系统会验证当前 GitHub 凭据是否有访问权限。</p>
+    </div>
+    <form class="github-settings-form" method="post" action="{{ url_for('select_repository') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label for="github-repo">GitHub 仓库地址</label>
+      <input id="github-repo" name="repository" type="text" value="{{ current_repository }}"
+             placeholder="https://github.com/owner/repository" autocomplete="url" required>
+      <small class="github-settings-help">也可以直接填写 <strong>owner/repository</strong>。</small>
+      <div class="github-settings-actions">
+        <button class="dashboard-primary" type="submit">验证并进入工作台</button>
       </div>
     </form>
   </section>
@@ -240,14 +264,19 @@
     <section class="activity-card">
       <div class="activity-title-row">
         <h3>{% if session.get('selected_source') == 'github' %}GitHub 提交{% else %}飞书群聊消息{% endif %}</h3>
-        {% if session.get('selected_source') == 'github' %}
-          <form class="sync-form" method="post" action="{{ url_for('sync_github') }}">
-        {% else %}
-          <form class="sync-form" method="post" action="{{ url_for('sync_feishu') }}">
-        {% endif %}
-          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-          <button class="sync-button" type="submit">立即同步</button>
-        </form>
+        <div class="activity-title-actions">
+          {% if session.get('selected_source') == 'github' %}
+            <form class="sync-form" method="post" action="{{ url_for('sync_github') }}">
+          {% else %}
+            <form class="sync-form" method="post" action="{{ url_for('sync_feishu') }}">
+          {% endif %}
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button class="sync-button" type="submit">立即同步</button>
+          </form>
+          {% if session.get('selected_source') == 'feishu' and session.get('selected_feishu_chat_id') %}
+            <a class="button-text activity-reselect-link" href="{{ url_for('home', reselect_chat=1) }}">切换群聊</a>
+          {% endif %}
+        </div>
       </div>
 
       {% if sync_status %}

@@ -2602,3 +2602,121 @@ body.dashboard-page { background: #edf1fb; }
 }
 .dashboard-page .feishu-setup-banner .feishu-settings-copy h2 { color: #4a5bea; }
 .dashboard-page .feishu-setup-banner .feishu-settings-copy span { color: #5b6be0; }
+
+/* ============================================================
+   工作台内「GitHub 仓库接入」引导卡片（github_needs_setup）
+   样式镜像飞书引导卡片，仅配色改为 GitHub 绿
+   ============================================================ */
+.dashboard-page .github-setup-banner {
+  border-left: 4px solid transparent;
+  border-image: linear-gradient(180deg, #2da44e, #34d399, #22d3ee) 1 / 0 0 0 4px;
+}
+.dashboard-page .github-setup-banner .github-settings-copy h2 { color: #1f8f43; }
+.dashboard-page .github-setup-banner .github-settings-copy span { color: #1f9d54; }
+
+.github-settings-panel {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  margin-top: 14px;
+  border: 1px solid #e3eee7;
+  border-radius: 15px;
+  padding: 16px 18px;
+  background: linear-gradient(110deg, #f3fbf5, #fff);
+  box-shadow: 0 7px 19px rgb(25 34 55 / 4%);
+}
+.github-settings-copy {
+  display: grid;
+  min-width: 210px;
+  max-width: 300px;
+  gap: 5px;
+}
+.github-settings-copy h2 {
+  margin: 0;
+  color: #30343f;
+  font-size: 14px;
+  font-weight: 750;
+}
+.github-settings-copy span {
+  color: #9298a4;
+  font-size: 9px;
+  line-height: 1.7;
+}
+.github-settings-copy p {
+  margin: 4px 0 0;
+  color: #7d8391;
+  font-size: 10px;
+  line-height: 1.65;
+}
+.github-settings-form {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  grid-template-columns: 90px minmax(180px, 1fr);
+  align-items: center;
+  gap: 9px;
+}
+.github-settings-form label {
+  color: #717784;
+  font-size: 9px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.github-settings-form input {
+  width: 100%;
+  min-width: 0;
+  height: 35px;
+  border: 1px solid #e0e7e2;
+  border-radius: 8px;
+  padding: 5px 9px;
+  background: #fff;
+  color: #424650;
+  font-size: 10px;
+}
+.github-settings-form input:focus {
+  border-color: #8ad6a5;
+  box-shadow: 0 0 0 3px rgb(45 164 78 / 10%);
+  outline: none;
+}
+.github-settings-help {
+  grid-column: 2 / -1;
+  margin: 0;
+  color: #8b93a3;
+  font-size: 10px;
+}
+.github-settings-actions {
+  display: flex;
+  grid-column: 2 / -1;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.github-settings-actions .dashboard-primary {
+  min-height: 35px;
+  font-size: 10px;
+}
+
+/* 同步活动标题行右侧动作组：立即同步 + 切换群聊 */
+.dashboard-page .activity-title-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.dashboard-page .activity-reselect-link {
+  min-height: 30px;
+  border: 1px solid #dbe4ff;
+  border-radius: 8px;
+  padding: 0 11px;
+  background: linear-gradient(120deg, #f2f5ff, #f7f2ff);
+  color: #4b57c9;
+  font-size: 10px;
+  font-weight: 650;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+}
+.dashboard-page .activity-reselect-link:hover {
+  background: linear-gradient(120deg, #e9edff, #f3ecff);
+  box-shadow: 0 4px 10px rgb(91 110 246 / 14%);
+}

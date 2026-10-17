@@ -31,8 +31,8 @@
         <strong>{{ selected_repository or '未连接仓库' }}</strong>
         <span>{% if github_selected %}当前接口 · 已连接仓库{% else %}提交记录与代码变更数据源{% endif %}</span>
       </div>
-      <a class="dashboard-primary" href="{{ url_for('select_repository') }}">
-        {% if selected_repository %}更换仓库{% else %}选择仓库{% endif %}
+      <a class="dashboard-primary" href="{{ url_for('home', source='github') }}">
+        {% if selected_repository %}进入工作台{% else %}选择仓库{% endif %}
       </a>
     </article>
 
