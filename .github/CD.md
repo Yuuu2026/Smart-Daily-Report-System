@@ -26,7 +26,7 @@ Actions → Deploy → Run workflow
 - 只发新日报、不改代码时，站点不会自动更新，可手动 Actions → Pages → Run workflow
 
 ## 服务守护
-计划任务 `DailyReportWebGuard` 每 5 分钟检查 5000/5001，未监听则重启 `DailyReportWeb`，日志写到 `.webguard.log`。
+计划任务 `DailyReportWebGuard` 每 1 分钟检查 5000/5001，未监听则重启 `DailyReportWeb`，日志写到 `.webguard.log`。
 用于兜底 runner 任务结束时清理子进程、或网站进程意外退出的情况。
 
 ## 回滚

@@ -40,3 +40,5 @@
 - 发布：`.github/workflows/pages.yml` 在 Deploy 成功后于本机 runner 导出并 `push --force` 到 `gh-pages` 分支（临时目录建仓，不污染工作区）。
 - 站点：https://yuuu2026.github.io/Smart-Daily-Report-System/ ，仓库 Settings → Pages 需设为「分支 gh-pages / root」。
 - 导出内容会公开（成员姓名 + 工作进展），默认不含成员上传图片。
+- 服务守护：计划任务 `DailyReportWebGuard` 每 1 分钟巡检 5000/5001，掉线则强杀残留监听进程并重启 `DailyReportWeb`（日志 `.webguard.log`）。
+  **已知现象**：每次 Deploy/Pages 任务结束后 python 子进程会被清掉、任务状态变 Ready，守护会在 1 分钟内自动拉起。
