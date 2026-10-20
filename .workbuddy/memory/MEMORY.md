@@ -3,7 +3,8 @@
 ## 仓库与推送
 - 远端：`origin` → https://github.com/Yuuu2026/Smart-Daily-Report-System （**公开**仓库）
 - 本地分支 `master`，仓库**默认分支已改为 `master`**（2026-10-17 对齐），日常只需 `git push`。
-  历史的 `main` 分支仍存在且停在 d5a0bd3，若继续用需手动同步；建议删除以免混淆。
+  `main` 与 `master` 已于 2026-10-20 对齐到同一提交（23c2b05），推送时注意两条分支不会自动同步，
+  单用 `master` 即可；如需保持 main 最新，用 `git push origin master:main` 快进。
 - **GitHub 推送必须走代理**（本机 Clash Verge，端口 `127.0.0.1:7897`），已配置：
   `git config --global http.https://github.com.proxy http://127.0.0.1:7897`
   代理未开时报 `Recv failure: Connection was reset`（非认证问题）。

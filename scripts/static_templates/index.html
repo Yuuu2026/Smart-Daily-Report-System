@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#ffffff">
+  <meta name="description" content="{{ site_name }}归档：{{ site_subtitle }}，共 {{ total_dates }} 天 {{ total_items }} 条记录。">
+  <title>{{ site_name }} · 归档总览</title>
+  <link rel="stylesheet" href="assets/style.css">
+  <style>
+    .static-archive-list { display: grid; gap: 14px; }
+    .static-date-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+    .static-member-chip { border-radius: 999px; padding: 3px 9px; background: #f1f3ff; color: #5b6be0; font-size: 11px; }
+    .static-note { margin: 18px 0 0; color: #8a8f9c; font-size: 12px; line-height: 1.7; }
+    .static-note a { color: #566ce5; }
+  </style>
+</head>
+<body class="dashboard-page archive-page">
+  <div class="dashboard-layout">
+    <aside class="dashboard-sidebar">
+      <a class="dashboard-brand" href="index.html">
+        <span class="dashboard-brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m13.2 2.8-8 10.1a.7.7 0 0 0 .55 1.13h5.1l-1 7.2 9-11.4a.7.7 0 0 0-.55-1.13h-5.2z"/></svg></span>
+        <span>{{ site_name }}</span>
+      </a>
+      <nav class="dashboard-nav" aria-label="归档导航">
+        <a class="dashboard-nav-link is-active" href="index.html" aria-current="page"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5.5" width="16" height="15" rx="2"/><path d="M8 3.5v4M16 3.5v4M4 10h16"/></svg>全部归档</a>
+        {% for day in sidebar %}
+        <a class="dashboard-nav-link{% if day.date == latest_date %} is-active{% endif %}" href="{{ day.file }}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h14M5 12h14M5 18h9"/></svg>{{ day.date[5:] }} · {{ day.weekday }}</a>
+        {% endfor %}
+      </nav>
+      <div class="dashboard-profile archive-profile"><span class="profile-avatar">日</span><span class="profile-copy"><strong>团队空间</strong><small>公开只读归档</small></span></div>
+    </aside>
+
+    <main class="dashboard-main">
+      <header class="dashboard-topbar">
+        <div class="dashboard-breadcrumb"><strong>归档总览</strong><span>静态只读版本</span></div>
+        <div class="topbar-actions">
+          <a class="dashboard-primary" href="https://github.com/Yuuu2026/Smart-Daily-Report-System" target="_blank" rel="noopener noreferrer">查看源码</a>
+        </div>
+      </header>
+
+      <div class="dashboard-content archive-dashboard-content">
+        <section class="welcome-card archive-overview">
+          <div>
+            <p class="welcome-date">PUBLIC ARCHIVE{% if latest_date %} · 最新 {{ latest_date }}{% endif %}</p>
+            <h1>{{ site_name }}归档</h1>
+            <p class="welcome-subtitle">{{ site_subtitle }}。内容由本机日报系统导出为静态快照，只读查看。</p>
+          </div>
+          <div class="archive-total"><strong>{{ total_items }}</strong><span>条记录</span></div>
+        </section>
+
+        <section class="archive-results-section">
+          <div class="section-heading"><h2>全部日期</h2><span>{{ total_dates }} 天 · {{ total_items }} 条记录</span></div>
+          <div class="archive-results static-archive-list">
+            {% for report in reports %}
+            <section class="archive-result-card">
+              <header class="archive-result-header">
+                <span class="profile-avatar">{{ report.date[8:10] }}</span>
+                <span class="archive-member-copy"><strong>{{ report.date }} · {{ report.weekday }}</strong><small>{{ report.members|join('、') }}</small></span>
+                <span class="archive-result-count">{{ report.count }} 条记录</span>
+              </header>
+              <div class="archive-result-items">
+                {% for item in report['items'][:3] %}
+                <article class="archive-result-item">
+                  <div class="archive-result-item-head">
+                    <div class="archive-result-title"><h3>{{ item.title }}</h3><span class="archive-source-badge{% if item.kind == 'github' %} is-github{% endif %}">{{ item.source_type }}</span></div>
+                    <time datetime="{{ item.created_at }}">{{ item.local_created_at }}</time>
+                  </div>
+                </article>
+                {% endfor %}
+                {% if report.count > 3 %}<p class="archive-attribution">还有 {{ report.count - 3 }} 条记录</p>{% endif %}
+                <a class="archive-source-link" href="{{ report.file }}">查看 {{ report.date }} 完整归档 <span aria-hidden="true">→</span></a>
+              </div>
+            </section>
+            {% endfor %}
+          </div>
+        </section>
+
+        <p class="static-note">本站为 GitHub Pages 静态托管，仅供只读查看；新增或修改内容请前往本机日报系统发布。导出时间 {{ generated_at }}。</p>
+        <footer class="dashboard-footer">成员发布内容按工作日期归档 · GitHub 提交按北京时间提交日期归档</footer>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

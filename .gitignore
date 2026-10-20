@@ -8,6 +8,7 @@ __pycache__/
 .env
 web/daily_report.db
 uploads/
+dist_site/
 .idea/
 .claude/
 .publisher.stdout.log

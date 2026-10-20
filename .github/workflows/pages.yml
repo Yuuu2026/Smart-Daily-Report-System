@@ -1,0 +1,94 @@
+name: Pages
+
+# 部署成功后，把本机数据库里的归档导出为静态站点，推送到 gh-pages 分支（GitHub Pages 托管）
+on:
+  workflow_run:
+    workflows: ["Deploy"]
+    types: [completed]
+    branches: [master]
+  workflow_dispatch:
+
+concurrency:
+  group: pages-publish
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: [self-hosted, Windows, X64, local-deploy]
+    timeout-minutes: 15
+
+    steps:
+      - name: Sync project code
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = 'C:\Users\Lenovo\dailyreport'
+          if (-not (Test-Path $root)) { throw "Project root not found: $root" }
+          $env:GIT_TERMINAL_PROMPT = '0'
+          git -C $root fetch origin master --quiet
+          if ($LASTEXITCODE -ne 0) { throw "git fetch failed" }
+          $local  = (git -C $root rev-parse HEAD).Trim()
+          $remote = (git -C $root rev-parse origin/master).Trim()
+          if ($local -ne $remote) {
+            git -C $root merge --ff-only origin/master
+            if ($LASTEXITCODE -ne 0) { Write-Host "::warning::merge skipped" }
+          }
+          Write-Host "Building from commit: $((git -C $root rev-parse --short HEAD).Trim())"
+
+      - name: Export static site
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = 'C:\Users\Lenovo\dailyreport'
+          $out  = Join-Path $root 'dist_site'
+          py -3.12 "$root\scripts\export_static_site.py" --out "$out"
+          if ($LASTEXITCODE -ne 0) { throw "export_static_site.py failed" }
+          $pages = (Get-ChildItem -Path $out -Filter *.html -Recurse).Count
+          if ($pages -lt 1) { throw "No html generated in $out" }
+          Write-Host "Generated $pages html files."
+
+      - name: Publish to gh-pages
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root  = 'C:\Users\Lenovo\dailyreport'
+          $repo  = 'Yuuu2026/Smart-Daily-Report-System'
+          $token = '${{ secrets.GITHUB_TOKEN }}'
+          $stage = Join-Path $env:RUNNER_TEMP 'gh-pages-stage'
+
+          if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
+          Copy-Item -Recurse -Force (Join-Path $root 'dist_site') $stage
+
+          Push-Location $stage
+          try {
+            git init -q
+            git checkout -q -b gh-pages
+            git -c core.autocrlf=false config user.name  'github-actions[bot]'
+            git -c core.autocrlf=false config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add -A
+            git diff --cached --quiet
+            if ($LASTEXITCODE -eq 0) {
+              Write-Host "No content change, nothing to publish."
+            } else {
+              git -c core.autocrlf=false commit -q -m "chore: publish static archive snapshot"
+              if ($LASTEXITCODE -ne 0) { throw "git commit failed" }
+              git remote add origin "https://x-access-token:$token@github.com/$repo.git"
+              git -c core.autocrlf=false push --force origin gh-pages
+              if ($LASTEXITCODE -ne 0) { throw "git push to gh-pages failed" }
+              Write-Host "Pushed to gh-pages."
+            }
+          } finally {
+            Pop-Location
+          }
+
+      - name: Summary
+        if: always()
+        shell: powershell
+        run: |
+          Write-Host "Status : ${{ job.status }}"
+          Write-Host "Pages  : https://yuuu2026.github.io/Smart-Daily-Report-System/"
+          Write-Host "Note   : Pages must be configured once with source = gh-pages branch, folder = / (root)."
