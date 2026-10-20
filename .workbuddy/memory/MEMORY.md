@@ -10,9 +10,21 @@
 - CI：`.github/workflows/ci.yml`，push/PR 到 main|master 时在 ubuntu-latest + Python 3.12 上跑
   `python -m unittest discover -v`，真实发现 36 个测试。公开仓库 Actions 免费无限额度。
 
+## CD（2026-10-20 接通）
+- 链路：push master → `CI` 成功 → `Deploy`（workflow_run 触发）在本机自托管 runner 上部署。
+- runner：`C:\Users\Lenovo\actions-runner`，名称 `Lenovo-Desktop`，标签 `self-hosted/windows/x64/local-deploy`；
+  用计划任务 `GitHubActionsRunner`（登录自启）拉起，无管理员权限故未装系统服务。`.env` 里配了代理。
+- 部署步骤：`git fetch` + `merge --ff-only` → `pip install -r web/requirements.txt` → 重启 → 健康检查 → 汇总。
+- 部署/运行路径：`C:\Users\Lenovo\dailyreport`（**指向项目真实目录的 junction**，规避中文路径在 Windows PowerShell 5.1 下的编码问题）。**项目目录若改名/移动，junction 会失效，需重建**。
+- 网站常驻：计划任务 `DailyReportWeb` 运行 `scripts/run_web.cmd`（内部设 `START_WEB_NO_WATCHDOG=1`、`START_WEB_NO_BROWSER=1`）。
+  部署时用 `schtasks /End` + `/Run` 重启，这样进程不被 runner 的 job 结束清理杀掉。
+- 架构注意：`deploy.yml` 里的 PowerShell **必须全 ASCII**（runner 以无 BOM UTF-8 写脚本，PS 5.1 会按 GBK 解析导致中文乱码）。
+- 手动重部署：Actions → Deploy → Run workflow。回滚：`git revert` 后 push，会自动部署回滚版本。
+
 ## 本地运行
-- 启动：`START_WEB_NO_WATCHDOG=1 py -3.12 start_web.py`（后台/常驻）
+- 手动启动：`START_WEB_NO_WATCHDOG=1 py -3.12 start_web.py`（日常更推荐用计划任务 `DailyReportWeb` 常驻）
 - 不设该变量时，start_web.py 的看门狗每 2s 检测站点，偶发超时即杀进程，后台跑会被误杀。
+- `START_WEB_NO_BROWSER=1` 可阻止启动时自动弹浏览器（CD 部署时必设，否则每次部署弹窗）。
 - 两个服务：5000 归档端、5001 发布端。模板改动需重启 Flask 才生效（debug 关闭时模板被缓存）。
 - 样式缓存版本号在各模板 `style.css?v=N`，改样式后需同步提升并重启。
 
