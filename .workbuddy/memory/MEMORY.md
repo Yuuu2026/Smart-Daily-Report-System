@@ -33,3 +33,10 @@
 - 新增样式统一追加到 `web/static/style.css` 末尾，用 `.dashboard-page` 作用域限定，不改原有布局。
 - `dashboard_shell.html` 顶层 `{% set %}` 会遮蔽 render_template 传入的同名变量（Jinja extends），同类命名需避开（如 `workspace_display`）。
 - 工作台接入卡片：飞书 `.feishu-setup-banner`、GitHub `.github-setup-banner`，由 `feishu_needs_setup` / `github_needs_setup` / `feishu_reselect` 控制。
+
+## 静态归档站（GitHub Pages）
+- 导出：`py -3.12 scripts/export_static_site.py`（可加 `--with-attachments`），产物在 `dist_site/`，已被忽略不入库。
+- 模板：`scripts/static_templates/{index,report}.html`，复用 `web/static/style.css` 类名，不依赖 Flask 路由。
+- 发布：`.github/workflows/pages.yml` 在 Deploy 成功后于本机 runner 导出并 `push --force` 到 `gh-pages` 分支（临时目录建仓，不污染工作区）。
+- 站点：https://yuuu2026.github.io/Smart-Daily-Report-System/ ，仓库 Settings → Pages 需设为「分支 gh-pages / root」。
+- 导出内容会公开（成员姓名 + 工作进展），默认不含成员上传图片。

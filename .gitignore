@@ -16,3 +16,4 @@ dist_site/
 .workbuddy/edge_profile/
 .workbuddy/feishu_qr*.png
 .workbuddy/qr_data.txt
+.webguard.log
