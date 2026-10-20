@@ -77,7 +77,8 @@ def main():
                     print("两个网站已在其他终端运行；本启动器不会重复启动它们。")
                 print(f"归档：{SERVICES[0][1]}")
                 print(f"发布：{SERVICES[1][1]}")
-                webbrowser.open(LOGIN_URL)
+                if not os.environ.get("START_WEB_NO_BROWSER"):
+                    webbrowser.open(LOGIN_URL)
                 if not running:
                     return 0
                 if os.environ.get("START_WEB_NO_WATCHDOG"):

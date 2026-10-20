@@ -1,0 +1,127 @@
+name: Deploy
+
+# CI 通过后自动部署到本机（自托管 runner）
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [master]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-local
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    # CI 成功才部署；手动触发（workflow_dispatch）可直接部署当前 master
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: [self-hosted, Windows, X64, local-deploy]
+    timeout-minutes: 20
+
+    steps:
+      - name: 拉取最新代码
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = 'C:\Users\Lenovo\dailyreport'
+          if (-not (Test-Path $root)) { throw "Deploy root not found: $root" }
+          $env:GIT_TERMINAL_PROMPT = '0'
+
+          git -C $root fetch origin master --quiet
+          if ($LASTEXITCODE -ne 0) { throw "git fetch failed" }
+
+          $local  = (git -C $root rev-parse HEAD).Trim()
+          $remote = (git -C $root rev-parse origin/master).Trim()
+          Write-Host "local : $local"
+          Write-Host "remote: $remote"
+
+          if ($local -eq $remote) {
+            Write-Host "Already up to date, skip merge."
+          } else {
+            git -C $root merge --ff-only origin/master
+            if ($LASTEXITCODE -ne 0) {
+              Write-Host "::warning::merge --ff-only failed (local changes?). Will only restart services."
+            }
+          }
+          $head = (git -C $root rev-parse --short HEAD).Trim()
+          Write-Host "Deploying commit: $head"
+
+      - name: 安装依赖
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = 'C:\Users\Lenovo\dailyreport'
+          py -3.12 -m pip install -q --disable-pip-version-check -r "$root\web\requirements.txt"
+          if ($LASTEXITCODE -ne 0) { throw "pip install failed" }
+          Write-Host "Dependencies OK."
+
+      - name: 重启网站服务
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Continue'
+
+          # 结束常驻任务（其子进程树一并终止）
+          schtasks /End /TN "DailyReportWeb" | Out-Null
+          Start-Sleep -Seconds 3
+
+          # 兜底：强制释放 5000 / 5001
+          foreach ($port in 5000, 5001) {
+            $conns = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue
+            foreach ($c in $conns) {
+              Write-Host "Killing PID $($c.OwningProcess) on port $port"
+              Stop-Process -Id $c.OwningProcess -Force -ErrorAction SilentlyContinue
+            }
+          }
+          Start-Sleep -Seconds 2
+
+          schtasks /Run /TN "DailyReportWeb" | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "Failed to start DailyReportWeb task" }
+          Write-Host "Service task started."
+
+      - name: 健康检查
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # 本机请求不要走代理
+          $env:HTTP_PROXY = ''
+          $env:HTTPS_PROXY = ''
+
+          $targets = @(
+            'http://127.0.0.1:5000/archive',
+            'http://127.0.0.1:5001/login'
+          )
+          $deadline = (Get-Date).AddSeconds(120)
+
+          while ((Get-Date) -lt $deadline) {
+            $allOk = $true
+            foreach ($url in $targets) {
+              try {
+                $r = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 8
+                if ($r.StatusCode -ne 200 -or $r.Content.Length -lt 500) { $allOk = $false }
+              } catch { $allOk = $false }
+            }
+            if ($allOk) {
+              Write-Host "Health check passed: 5000 and 5001 are serving."
+              exit 0
+            }
+            Start-Sleep -Seconds 4
+          }
+          throw "Health check timed out after 120s"
+
+      - name: 部署结果汇总
+        if: always()
+        shell: powershell
+        run: |
+          $root = 'C:\Users\Lenovo\dailyreport'
+          $head = (git -C $root rev-parse --short HEAD).Trim()
+          Write-Host "Commit : $head"
+          Write-Host "Status : ${{ job.status }}"
+          foreach ($port in 5000, 5001) {
+            $c = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue
+            if ($c) { Write-Host "Port $port : listening (PID $($c[0].OwningProcess))" }
+            else { Write-Host "Port $port : NOT listening" }
+          }
