@@ -40,8 +40,14 @@ LOG_MAX_BYTES = 256 * 1024
 # (port, script) started with the current interpreter, cwd = web/
 SERVICES = ((5000, "app.py"), (5001, "publisher_app.py"))
 
+# GitHub Actions runner 由计划任务托管，挂了会让 CD 一直排队；这里只负责把它唤醒。
+RUNNER_IMAGE = "Runner.Listener.exe"
+RUNNER_TASK = "GitHubActionsRunner"
+
 # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP: no console, survives its parent.
 DETACHED_FLAGS = 0x00000008 | 0x00000200
+# 调外部命令时不弹窗口
+NO_WINDOW = 0x08000000
 
 
 def now() -> str:
@@ -139,6 +145,43 @@ def check_once(children: dict[int, tuple[subprocess.Popen, float]]) -> bool:
     return all(port_is_up(port) for port, _ in SERVICES)
 
 
+def process_running(image_name: str) -> bool:
+    """用 tasklist 查进程（不引入额外依赖）；查不到时按\"在运行\"处理，避免误重启。"""
+    try:
+        result = subprocess.run(
+            ["tasklist", "/FI", f"IMAGENAME eq {image_name}", "/NH"],
+            capture_output=True,
+            text=True,
+            timeout=20,
+            creationflags=NO_WINDOW,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return True
+    return image_name.lower() in result.stdout.lower()
+
+
+def ensure_runner(previous_state: list[bool]) -> None:
+    """runner 掉线时唤醒对应计划任务；只在状态变化时写日志。"""
+    alive = process_running(RUNNER_IMAGE)
+    if alive:
+        if previous_state and previous_state[0] is False:
+            log("GitHub Actions runner 已恢复")
+        previous_state[:] = [True]
+        return
+    if not previous_state or previous_state[0] is not False:
+        log(f"{RUNNER_IMAGE} 未运行，请求计划任务 {RUNNER_TASK} 启动")
+    previous_state[:] = [False]
+    try:
+        subprocess.run(
+            ["schtasks", "/Run", "/TN", RUNNER_TASK],
+            capture_output=True,
+            timeout=30,
+            creationflags=NO_WINDOW,
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        log(f"启动 runner 任务失败：{error!r}")
+
+
 def main(argv: list[str]) -> int:
     once = "--once" in argv
 
@@ -151,6 +194,7 @@ def main(argv: list[str]) -> int:
     log(f"supervisor up (pid {os.getpid()}, interpreter {sys.executable})")
 
     children: dict[int, tuple[subprocess.Popen, float]] = {}
+    runner_state: list[bool] = []
     try:
         if once:
             healthy = check_once(children)
@@ -160,6 +204,7 @@ def main(argv: list[str]) -> int:
         while True:
             try:
                 check_once(children)
+                ensure_runner(runner_state)
             except Exception as error:  # never let one bad pass kill the guard
                 log(f"check failed: {error!r}")
             time.sleep(CHECK_SECONDS)

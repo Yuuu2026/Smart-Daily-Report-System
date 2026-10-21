@@ -25,6 +25,17 @@
 - 架构注意：`deploy.yml` 里的 PowerShell **必须全 ASCII**（runner 以无 BOM UTF-8 写脚本，PS 5.1 会按 GBK 解析导致中文乱码）。
 - 手动重部署：Actions → Deploy → Run workflow。回滚：`git revert` 后 push，会自动部署回滚版本。
 
+## 代码结构（2026-10-21 规整后）
+- `web/app.py`（归档端 + 数据库 schema/连接）→ `web/publisher_repo.py`（发布端数据层）
+  → `web/publisher_app.py`（发布端路由，只做请求编排）。
+- **发布端所有数据库读写、时间转换、视图模型都在 `publisher_repo.py`**，新增页面时先在这里加查询函数，
+  不要把 SQL 写回路由文件。公共字段用 `_base_item()`，时间显示用 `to_local()` / `local_label()` / `relative_time()`。
+- 路由统一两层装饰器：`@login_required`（未登录跳登录页）、`@csrf_protected`（表单 token 失败返回 400）；
+  需要"闪提示 + 跳回某页"的用 `csrf_redirect("endpoint", **args)`。
+- 测试用 `patch("web.publisher_app.xxx")` 打桩 `send_progress_email` / `smtp_settings_from_env` /
+  `collect_feishu_recent_messages` / `store_feishu_app_secret` / `list_feishu_chats` / `send_test_email`，
+  这些调用点必须留在 `publisher_app.py`，否则测试失效。
+
 ## 本地运行
 - 手动启动：`START_WEB_NO_WATCHDOG=1 py -3.12 start_web.py`（日常不用管，计划任务 `DailyReportWebGuard` 已常驻）
 - 手动修复一次：`py -3.12 scripts/web_supervisor.py --once`（端口 5099 单例锁，与常驻守护不冲突）
