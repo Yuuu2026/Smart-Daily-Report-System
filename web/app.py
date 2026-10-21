@@ -2,7 +2,6 @@
 
 import argparse
 import datetime
-import json
 import os
 import secrets
 import sqlite3
@@ -16,14 +15,13 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from flask import Flask, Response, jsonify, redirect, render_template, request, url_for
-from web.audit import log_audit
+
 from web.github_source import GitHubSourceError, normalize_repository
 from report_core import (
     CATEGORY_ORDER,
     RECORD_FIELDS,
     group_by_member,
     render_structured_report,
-    validate,
 )
 
 DATABASE_PATH = Path(__file__).resolve().parent / "daily_report.db"
@@ -282,116 +280,6 @@ def initialize_database(database_path=DATABASE_PATH):
         raise DatabaseInitializationError(
             "数据库初始化失败，请检查数据库文件和目录权限。"
         ) from None
-
-
-def restore_record(database_row):
-    """从数据库行恢复原始类别记录，包括 extra_json 中的未知字段。"""
-    row = dict(database_row)
-    category = row["category"]
-    if category not in RECORD_FIELDS:
-        raise ValueError(f"未知记录类别：{category}")
-
-    record = {field: row[field] for field in RECORD_FIELDS[category]}
-    extra_fields = json.loads(row.get("extra_json") or "{}")
-    if not isinstance(extra_fields, dict):
-        raise ValueError("数据库中的 extra_json 格式无效。")
-    record.update(extra_fields)
-    return {
-        "work_date": row["work_date"],
-        "category": category,
-        "record": record,
-    }
-
-
-def _duplicate_key(entry):
-    """生成包含日期、类别和整条记录的顺序无关比较键。"""
-    return (
-        entry["work_date"],
-        entry["category"],
-        json.dumps(entry["record"], ensure_ascii=False, sort_keys=True),
-    )
-
-
-def find_duplicate_records(records, existing_records=()):
-    """找出新记录与数据库或同批较早记录重复的项目，不修改或删除记录。
-
-    records 中每项格式为 {"work_date": 日期, "category": 类别, "record": 原始记录}。
-    existing_records 可为相同格式，也可直接传入含 extra_json 的数据库行。
-    返回项包含新记录的一起始序号和重复来源，供后续接口生成提示。
-    """
-    existing_keys = {}
-    for existing in existing_records:
-        existing_data = dict(existing)
-        if "record" in existing_data:
-            normalized = existing_data
-        else:
-            normalized = restore_record(existing_data)
-        existing_keys.setdefault(_duplicate_key(normalized), existing_data)
-
-    seen_batch = {}
-    duplicates = []
-    for index, entry in enumerate(records, start=1):
-        key = _duplicate_key(entry)
-        if key in existing_keys:
-            duplicates.append({
-                "index": index,
-                "category": entry["category"],
-                "member": entry["record"].get("member"),
-                "duplicate_of": "数据库已有记录",
-            })
-        elif key in seen_batch:
-            duplicates.append({
-                "index": index,
-                "category": entry["category"],
-                "member": entry["record"].get("member"),
-                "duplicate_of": f"本批第 {seen_batch[key]} 条",
-            })
-        else:
-            seen_batch[key] = index
-    return duplicates
-
-
-def _insert_record(connection, entry):
-    """Insert one validated normalized entry using the shared V2 schema."""
-    category = entry["category"]
-    record = entry["record"]
-    values = {
-        "repo": None,
-        "message": None,
-        "task": None,
-        "progress": None,
-        "channel": None,
-        "summary": None,
-    }
-    values.update({
-        field: record[field]
-        for field in RECORD_FIELDS[category]
-        if field != "member"
-    })
-    extra_fields = {
-        field: value
-        for field, value in record.items()
-        if field not in RECORD_FIELDS[category]
-    }
-    cursor = connection.execute(
-        """INSERT INTO records (
-            work_date, category, member, repo, message, task, progress,
-            channel, summary, extra_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (
-            entry["work_date"],
-            category,
-            record["member"],
-            values["repo"],
-            values["message"],
-            values["task"],
-            values["progress"],
-            values["channel"],
-            values["summary"],
-            json.dumps(extra_fields, ensure_ascii=False, sort_keys=True),
-        ),
-    )
-    return cursor.lastrowid
 
 
 def build_report_text(work_date, database_path=DATABASE_PATH):

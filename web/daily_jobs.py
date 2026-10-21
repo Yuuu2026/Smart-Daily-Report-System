@@ -140,30 +140,3 @@ def run_daily_report(work_date, database_path=DATABASE_PATH):
             "attempts": None,
             "message": "日报生成失败，请检查数据库权限和记录数据后重试。",
         }
-
-
-def _schedule_time(value):
-    try:
-        parsed = datetime.datetime.strptime(value, "%H:%M").time()
-    except (TypeError, ValueError):
-        raise ValueError("调度时间须为 HH:MM，例如 18:00。") from None
-    if parsed.strftime("%H:%M") != value:
-        raise ValueError("调度时间须为 HH:MM，例如 18:00。")
-    return parsed
-
-
-def run_scheduler(database_path=DATABASE_PATH, schedule_time="18:00", stop_event=None, poll_seconds=15):
-    """供主服务使用的本机时间调度循环，可传入 stop_event 便于受控关闭。"""
-    target_time = _schedule_time(schedule_time)
-    attempted_date = None
-    while stop_event is None or not stop_event.is_set():
-        local_now = datetime.datetime.now().astimezone()
-        today = local_now.date().isoformat()
-        if local_now.time().replace(tzinfo=None) >= target_time and attempted_date != today:
-            run_daily_report(today, database_path)
-            attempted_date = today
-        if stop_event is None:
-            import time
-            time.sleep(poll_seconds)
-        elif stop_event.wait(poll_seconds):
-            break

@@ -11,10 +11,8 @@ import sys
 from report_core import (
     CATEGORY_NAMES,
     CATEGORY_ORDER,
-    RECORD_FIELDS,
     group_by_member,
     render_report,
-    type_name,
     validate,
 )
 

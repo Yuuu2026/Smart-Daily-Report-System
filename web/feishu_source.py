@@ -434,8 +434,3 @@ def collect_feishu_recent_messages(chat_id, app_id=None, app_secret=None, chat_n
             }
         )
     return chat_name, results
-
-
-def feishu_sync_page_path():
-    """返回飞书页面路由，便于调用方保持链接一致。"""
-    return "/feishu"

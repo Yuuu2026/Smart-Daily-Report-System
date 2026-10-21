@@ -2059,7 +2059,7 @@ body.dashboard-page {
 }
 
 /* ============================================================
-   视觉增强层 v10 —— 增加色彩层次与环境光，填充空白区域
+   视觉增强一：底色、侧栏与卡片基础色
    仅新增装饰性声明，不改变任何布局结构
    ============================================================ */
 :root {
@@ -2069,16 +2069,6 @@ body.dashboard-page {
   --v10-mint: #34d399;
   --v10-amber: #fbbf24;
   --v10-rose: #fb7185;
-}
-
-/* 主内容区：多层环境色雾，填充大片留白 */
-body.dashboard-page { background: #f6f8fd; }
-.dashboard-page .dashboard-main {
-  background:
-    radial-gradient(58rem 30rem at 106% -10%, rgb(91 110 246 / 13%), transparent 62%),
-    radial-gradient(44rem 26rem at -8% 10%, rgb(52 211 153 / 11%), transparent 60%),
-    radial-gradient(40rem 24rem at 52% 116%, rgb(139 92 246 / 11%), transparent 62%),
-    #f6f8fd;
 }
 
 /* 侧边栏：竖向渐变 + 柔和投影 */
@@ -2290,18 +2280,8 @@ body.dashboard-page { background: #f6f8fd; }
 }
 
 /* ============================================================
-   视觉增强层 v10.1 —— 加强色彩浓度与卡片内部层次
+   视觉增强二：色彩浓度与卡片内部层次
    ============================================================ */
-body.dashboard-page { background: #f2f5fd; }
-.dashboard-page .dashboard-main {
-  background:
-    radial-gradient(56rem 30rem at 104% -6%, rgb(91 110 246 / 20%), transparent 64%),
-    radial-gradient(44rem 26rem at -10% 6%, rgb(52 211 153 / 16%), transparent 62%),
-    radial-gradient(42rem 26rem at 46% 112%, rgb(139 92 246 / 17%), transparent 64%),
-    radial-gradient(32rem 20rem at 84% 62%, rgb(34 211 238 / 12%), transparent 66%),
-    #f2f5fd;
-}
-
 /* 归档卡片内容区：淡渐变 + 条目悬浮高亮 */
 .dashboard-page .archive-result-items {
   background: linear-gradient(180deg, #fdfdff, #fafbff 60%, #f6f9ff);
@@ -2387,7 +2367,7 @@ body.dashboard-page { background: #f2f5fd; }
 }
 
 /* ============================================================
-   视觉增强层 v10.2 —— 提高环境色浓度 + 极淡点阵纹理
+   视觉增强三：环境色与极淡点阵纹理
    ============================================================ */
 body.dashboard-page { background: #edf1fb; }
 .dashboard-page .dashboard-main {
@@ -2421,7 +2401,7 @@ body.dashboard-page { background: #edf1fb; }
 }
 
 /* ============================================================
-   视觉增强层 v10.3 —— 卡片内部色彩：时间轴色轨、左侧彩边、交替淡彩行
+   视觉增强四：卡片细节（时间轴色轨、左侧彩边、交替淡彩行）
    ============================================================ */
 /* 成员卡片：左侧渐变彩边（按序号轮换配色） */
 .dashboard-page .archive-result-card {
@@ -2469,12 +2449,13 @@ body.dashboard-page { background: #edf1fb; }
 }
 
 /* 首页统计区与进度卡：角落彩色光晕 */
+/* overflow 必须可见，否则进度卡里的原生下拉框会被裁切 */
 .dashboard-page .dashboard-stats { position: relative; }
-.dashboard-page .progress-card { position: relative; overflow: hidden; }
+.dashboard-page .progress-card { position: relative; overflow: visible; border-radius: 17px; }
 .dashboard-page .progress-card::after {
   position: absolute;
-  top: -60px;
-  right: -40px;
+  top: 0;
+  right: 0;
   width: 200px;
   height: 200px;
   border-radius: 50%;
@@ -2494,11 +2475,6 @@ body.dashboard-page { background: #edf1fb; }
   content: "";
   pointer-events: none;
 }
-
-/* 修正：进度卡内有原生下拉框，避免 overflow 裁切下拉层 */
-.dashboard-page .progress-card { overflow: visible; }
-.dashboard-page .progress-card::after { top: 0; right: 0; }
-.dashboard-page .progress-card { border-radius: 17px; }
 
 /* ============================================================
    工作台交互增强：照片预览、草稿恢复提示

@@ -2,6 +2,7 @@
 
 import argparse
 import datetime
+import functools
 import hmac
 import json
 import math
@@ -28,24 +29,19 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from report_quality import quality_warnings
+
 from web.app import DATABASE_PATH, database_connection, initialize_database
+from web.audit import log_audit
 from web.email_notifications import (
     EmailNotificationError,
     is_valid_email,
     local_sender_email,
     send_progress_email,
     send_test_email,
-    smtp_password_is_saved,
     smtp_settings_from_env,
     store_smtp_password,
     write_local_smtp_config,
-)
-from web.audit import log_audit
-from web.github_source import (
-    GitHubSourceError,
-    collect_last_24_hours,
-    normalize_repository,
-    validate_repository,
 )
 from web.feishu_source import (
     FeishuSourceError,
@@ -53,579 +49,75 @@ from web.feishu_source import (
     list_feishu_chats,
     store_feishu_app_secret,
 )
-from web.publisher_auth import hash_password, verify_password
-from report_core import parse_progress_sections
-from report_quality import quality_warnings
+from web.github_source import (
+    GitHubSourceError,
+    collect_last_24_hours,
+    normalize_repository,
+    validate_repository,
+)
+from web.publisher_auth import hash_password, login_required, verify_password
+from web.publisher_repo import (
+    MAX_ATTACHMENT_BYTES,
+    MAX_ATTACHMENT_COUNT,
+    activity_snapshot,
+    date_window,
+    feishu_item,
+    github_item,
+    local_label,
+    normalize_recipients,
+    parse_page,
+    persist_feishu_messages,
+    published_item,
+    recipient_slots,
+    record_email_delivery,
+    save_uploaded_attachments,
+    start_feishu_auto_sync,
+    stop_feishu_auto_sync,
+    stream_for_publish,
+)
 
-
+# 列表页每页条数
 ARCHIVE_PAGE_SIZE = 6
 GITHUB_PAGE_SIZE = 8
 FEISHU_PAGE_SIZE = 8
-FEISHU_AUTO_SYNC_INTERVAL_SECONDS = 5
-ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"}
-MAX_ATTACHMENT_COUNT = 6
-MAX_ATTACHMENT_BYTES = 6 * 1024 * 1024
+
+CSRF_ERROR = "页面已过期，请刷新后重试。"
 
 
-def persist_feishu_messages(
-    connection,
-    messages,
-    chat_id,
-    chat_name,
-    started,
-    completed,
-    user_id=None,
-    actor_name=None,
-):
-    """将飞书消息写入 feishu_messages / records，并记录同步运行与审计。"""
-    new_count = 0
-    for message in messages:
-        extra_fields = {
-            "source_type": "feishu",
-            "message_id": message["message_id"],
-            "chat_id": message["chat_id"],
-            "sender_id": message["sender_id"],
-            "msg_type": message["msg_type"],
-            "created_at_utc": message["created_at_utc"],
-            "collected_at_utc": message["collected_at_utc"],
-        }
-        extra_json = json.dumps(extra_fields, ensure_ascii=False, sort_keys=True)
-        existing = connection.execute(
-            "SELECT id, record_id FROM feishu_messages WHERE message_id = ?",
-            (message["message_id"],),
-        ).fetchone()
-        if existing:
-            record_id = existing["record_id"]
-            if record_id:
-                connection.execute(
-                    """UPDATE records
-                       SET member = ?, channel = ?, summary = ?, extra_json = ?
-                       WHERE id = ?""",
-                    (
-                        message["member_name"],
-                        message["chat_name"],
-                        message["summary"],
-                        extra_json,
-                        record_id,
-                    ),
-                )
-            else:
-                cursor = connection.execute(
-                    """INSERT INTO records
-                       (work_date, category, member, channel, summary, extra_json)
-                       VALUES (?, 'collaborations', ?, ?, ?, ?)""",
-                    (
-                        message["work_date"],
-                        message["member_name"],
-                        message["chat_name"],
-                        message["summary"],
-                        extra_json,
-                    ),
-                )
-                record_id = cursor.lastrowid
-            connection.execute(
-                """UPDATE feishu_messages
-                   SET chat_name = ?, member_name = ?, msg_type = ?,
-                       work_date = ?, summary = ?, created_at_utc = ?,
-                       collected_at_utc = ?, record_id = ?
-                   WHERE id = ?""",
-                (
-                    message["chat_name"],
-                    message["member_name"],
-                    message["msg_type"],
-                    message["work_date"],
-                    message["summary"],
-                    message["created_at_utc"],
-                    message["collected_at_utc"],
-                    record_id,
-                    existing["id"],
-                ),
+def csrf_token():
+    """取得（必要时生成并写入会话）当前请求的 CSRF token。"""
+    token = session.get("csrf_token")
+    if not token:
+        token = secrets.token_urlsafe(32)
+        session["csrf_token"] = token
+    return token
+
+
+def csrf_valid():
+    """校验表单里带回的 token 与会话中的一致。"""
+    supplied = request.form.get("csrf_token", "")
+    expected = session.get("csrf_token", "")
+    return bool(supplied and expected and hmac.compare_digest(supplied, expected))
+
+
+def csrf_protected(view):
+    """表单 POST 统一做 CSRF 校验，失败返回 400 纯文本。"""
+
+    @functools.wraps(view)
+    def wrapper(*args, **kwargs):
+        if not csrf_valid():
+            return Response(
+                CSRF_ERROR, status=400, content_type="text/plain; charset=utf-8"
             )
-            continue
+        return view(*args, **kwargs)
 
-        cursor = connection.execute(
-            """INSERT INTO records
-               (work_date, category, member, channel, summary, extra_json)
-               VALUES (?, 'collaborations', ?, ?, ?, ?)""",
-            (
-                message["work_date"],
-                message["member_name"],
-                message["chat_name"],
-                message["summary"],
-                extra_json,
-            ),
-        )
-        record_id = cursor.lastrowid
-        connection.execute(
-            """INSERT INTO feishu_messages
-               (message_id, chat_id, chat_name, sender_id, member_name,
-                msg_type, work_date, summary, created_at_utc,
-                collected_at_utc, record_id)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                message["message_id"],
-                message["chat_id"],
-                message["chat_name"],
-                message["sender_id"],
-                message["member_name"],
-                message["msg_type"],
-                message["work_date"],
-                message["summary"],
-                message["created_at_utc"],
-                message["collected_at_utc"],
-                record_id,
-            ),
-        )
-        new_count += 1
-
-    connection.execute(
-        """INSERT INTO feishu_sync_runs
-           (chat_id, chat_name, status, message_count, started_at_utc, completed_at_utc)
-           VALUES (?, ?, 'succeeded', ?, ?, ?)""",
-        (chat_id, chat_name, len(messages), started, completed),
-    )
-    if user_id:
-        connection.execute(
-            """UPDATE publisher_users
-               SET feishu_chat_id = ?, feishu_chat_name = ?
-               WHERE id = ?""",
-            (chat_id, chat_name, user_id),
-        )
-    log_audit(
-        connection,
-        "feishu_sync_succeeded",
-        "feishu_chat",
-        actor_id=user_id,
-        actor_name=actor_name or "自动同步",
-        work_date=datetime.date.today().isoformat(),
-        summary={
-            "message_count": len(messages),
-            "new_count": new_count,
-            "trigger": "auto" if not user_id else "manual",
-        },
-    )
-    return new_count
+    return wrapper
 
 
-def _stream_for_publish(connection, selected_source, chat_id, repository, work_date=None):
-    """根据当前数据源查询流水，返回 (stream_label, stream_items)。"""
-    seen = set()
-
-    def unique(item):
-        key = (item["member"], item["summary"])
-        if key in seen:
-            return None
-        seen.add(key)
-        return item
-
-    if selected_source == "feishu" and chat_id:
-        if work_date:
-            rows = connection.execute(
-                """SELECT member_name, summary FROM feishu_messages
-                   WHERE chat_id = ? AND work_date = ?
-                   ORDER BY created_at_utc ASC, id ASC""",
-                (chat_id, work_date),
-            ).fetchall()
-        else:
-            rows = connection.execute(
-                """SELECT member_name, summary FROM feishu_messages
-                   WHERE chat_id = ? ORDER BY created_at_utc ASC, id ASC""",
-                (chat_id,),
-            ).fetchall()
-        items = [
-            {"tag": "飞书", "member": row["member_name"], "summary": row["summary"]}
-            for row in rows
-        ]
-        items = [item for item in (unique(item) for item in items) if item]
-        return "飞书群聊消息", items[-80:]
-    if selected_source == "github" and repository:
-        if work_date:
-            rows = connection.execute(
-                """SELECT member_name, message FROM github_commits
-                   WHERE repository = ? AND work_date = ?
-                   ORDER BY committed_at_utc ASC, id ASC""",
-                (repository, work_date),
-            ).fetchall()
-        else:
-            rows = connection.execute(
-                """SELECT member_name, message FROM github_commits
-                   WHERE repository = ? ORDER BY committed_at_utc ASC, id ASC""",
-                (repository,),
-            ).fetchall()
-        items = [
-            {"tag": "GitHub", "member": row["member_name"], "summary": row["message"]}
-            for row in rows
-        ]
-        items = [item for item in (unique(item) for item in items) if item]
-        return "GitHub 提交", items[-80:]
-    return None, []
-
-
-_feishu_auto_sync_stop = None
-_feishu_auto_sync_last_failure = {}
-
-
-def _feishu_auto_sync_run_once(database_path):
-    """对所有已配置飞书群聊的用户执行一次消息拉取。"""
-    try:
-        with database_connection(database_path) as connection:
-            users = connection.execute(
-                """SELECT id, display_name, feishu_app_id, feishu_chat_id, feishu_chat_name
-                   FROM publisher_users
-                   WHERE feishu_app_id != '' AND feishu_chat_id != ''
-                   ORDER BY id"""
-            ).fetchall()
-    except sqlite3.Error as error:
-        print(f"[飞书自动同步] 读取用户配置失败：{error}", file=sys.stderr)
-        return
-
-    for user in users:
-        started = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
-        try:
-            chat_name, messages = collect_feishu_recent_messages(
-                user["feishu_chat_id"],
-                app_id=user["feishu_app_id"],
-                chat_name=user["feishu_chat_name"],
-            )
-            completed = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
-            with database_connection(database_path) as connection:
-                new_count = persist_feishu_messages(
-                    connection,
-                    messages,
-                    user["feishu_chat_id"],
-                    chat_name,
-                    started,
-                    completed,
-                    user_id=user["id"],
-                    actor_name=user["display_name"],
-                )
-            print(
-                f"[飞书自动同步] 用户 {user['display_name']} 群「{chat_name}」："
-                f"获取 {len(messages)} 条，新增 {new_count} 条。"
-            )
-            _feishu_auto_sync_last_failure.pop(user["id"], None)
-        except FeishuSourceError as error:
-            completed = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
-            error_message = str(error)[:240]
-            failure_signature = error_message
-            previous_failure = _feishu_auto_sync_last_failure.get(user["id"])
-            _feishu_auto_sync_last_failure[user["id"]] = failure_signature
-            if previous_failure == failure_signature:
-                continue
-            try:
-                with database_connection(database_path) as connection:
-                    connection.execute(
-                        """INSERT INTO feishu_sync_runs
-                           (chat_id, chat_name, status, message_count, started_at_utc,
-                            completed_at_utc, error_message)
-                           VALUES (?, ?, 'failed', 0, ?, ?, ?)""",
-                        (
-                            user["feishu_chat_id"],
-                            user["feishu_chat_name"] or user["feishu_chat_id"],
-                            started,
-                            completed,
-                            error_message,
-                        ),
-                    )
-                    log_audit(
-                        connection,
-                        "feishu_sync_failed",
-                        "feishu_chat",
-                        actor_id=user["id"],
-                        actor_name=user["display_name"],
-                        summary={"error_code": "source_unavailable"},
-                    )
-            except sqlite3.Error as db_error:
-                print(f"[飞书自动同步] 写入失败记录出错：{db_error}", file=sys.stderr)
-            print(
-                f"[飞书自动同步] 用户 {user['display_name']} 同步失败：{error}",
-                file=sys.stderr,
-            )
-
-
-def _feishu_auto_sync_worker(database_path, stop_event):
-    """后台线程：周期性拉取所有已配置用户的飞书群聊消息。"""
-    interval = FEISHU_AUTO_SYNC_INTERVAL_SECONDS
-    print(
-        f"[飞书自动同步] 后台线程已启动，每 {FEISHU_AUTO_SYNC_INTERVAL_SECONDS} 秒拉取一次。"
-    )
-    while not stop_event.is_set():
-        try:
-            _feishu_auto_sync_run_once(database_path)
-        except Exception as error:
-            print(f"[飞书自动同步] 未预期错误：{error}", file=sys.stderr)
-        if stop_event.wait(interval):
-            break
-    print("[飞书自动同步] 后台线程已停止。")
-
-
-def start_feishu_auto_sync(database_path=DATABASE_PATH):
-    """启动飞书自动同步后台线程（幂等，多次调用只启动一次）。"""
-    global _feishu_auto_sync_stop
-    if _feishu_auto_sync_stop is not None:
-        return
-    import threading
-
-    stop_event = threading.Event()
-    _feishu_auto_sync_stop = stop_event
-    thread = threading.Thread(
-        target=_feishu_auto_sync_worker,
-        args=(database_path, stop_event),
-        name="feishu-auto-sync",
-        daemon=True,
-    )
-    thread.start()
-
-
-def stop_feishu_auto_sync():
-    """停止飞书自动同步后台线程。"""
-    global _feishu_auto_sync_stop
-    if _feishu_auto_sync_stop is not None:
-        _feishu_auto_sync_stop.set()
-        _feishu_auto_sync_stop = None
-
-
-def _parse_date(value):
-    if not value:
-        return None
-    try:
-        parsed = datetime.date.fromisoformat(value)
-    except ValueError:
-        raise ValueError("日期必须是有效的 YYYY-MM-DD 日期。") from None
-    if parsed.isoformat() != value:
-        raise ValueError("日期必须是 YYYY-MM-DD 格式。")
-    return parsed
-
-
-def _date_window(from_value, to_value, default_days=30):
-    if not from_value and not to_value:
-        return "", ""
-    today = datetime.date.today()
-    start = _parse_date(from_value) or today - datetime.timedelta(days=default_days)
-    end = _parse_date(to_value) or today
-    if start > end:
-        raise ValueError("开始日期不能晚于结束日期。")
-    return start.isoformat(), end.isoformat()
-
-
-def _parse_page(value):
-    try:
-        return max(1, int(value))
-    except (TypeError, ValueError):
-        return 1
-
-
-def _relative_time(value):
-    committed_at = datetime.datetime.fromisoformat(value)
-    if committed_at.tzinfo is None:
-        committed_at = committed_at.replace(tzinfo=datetime.timezone.utc)
-    elapsed = max(
-        0,
-        int((datetime.datetime.now(datetime.timezone.utc) - committed_at).total_seconds()),
-    )
-    if elapsed < 3600:
-        return f"{max(1, elapsed // 60)} 分钟前"
-    if elapsed < 86400:
-        return f"{elapsed // 3600} 小时前"
-    if elapsed < 172800:
-        return "昨天"
-    return committed_at.astimezone().strftime("%m月%d日")
-
-
-def _record_email_delivery(
-    connection,
-    user_id,
-    sender_email,
-    recipient_email,
-    subject,
-    delivery_type,
-    work_date,
-    status,
-    error_message="",
-):
-    """记录一次邮件发送结果，供工作台展示最近发送状态。"""
-    connection.execute(
-        """INSERT INTO email_delivery_logs (
-            user_id, sender_email, recipient_email, subject, delivery_type,
-            status, work_date, error_message, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (
-            user_id,
-            sender_email or "",
-            recipient_email or "",
-            subject,
-            delivery_type,
-            status,
-            work_date,
-            error_message or None,
-            datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
-        ),
-    )
-
-
-def _normalize_recipients(*emails):
-    """规范化多个收件邮箱：去空、去重、校验格式，返回有序列表。"""
-    recipients = []
-    seen = set()
-    for email in emails:
-        address = (email or "").strip()
-        if not address:
-            continue
-        if not is_valid_email(address):
-            raise EmailNotificationError(f"收件邮箱格式不正确：{address}")
-        key = address.lower()
-        if key in seen:
-            continue
-        seen.add(key)
-        recipients.append(address)
-    return recipients
-
-
-def _save_uploaded_attachments(files, upload_folder):
-    """保存日报照片，返回相对上传目录的 POSIX 路径列表。"""
-    if not files:
-        return []
-    upload_root = Path(upload_folder)
-    saved = []
-    for file in files:
-        if not file or not file.filename:
-            continue
-        if len(saved) >= MAX_ATTACHMENT_COUNT:
-            break
-        extension = Path(file.filename).suffix.lower()
-        if extension not in ALLOWED_IMAGE_EXTENSIONS:
-            raise ValueError("仅支持 JPG、PNG、GIF、WebP、BMP 图片。")
-        content_type = (file.content_type or "").lower()
-        if not content_type.startswith("image/"):
-            raise ValueError("上传文件不是图片，请重新选择照片。")
-        file.stream.seek(0, os.SEEK_END)
-        size = file.stream.tell()
-        file.stream.seek(0)
-        if size > MAX_ATTACHMENT_BYTES:
-            raise ValueError("单张照片不能超过 6MB。")
-        now = datetime.date.today()
-        target_dir = upload_root / str(now.year) / f"{now.month:02d}"
-        target_dir.mkdir(parents=True, exist_ok=True)
-        filename = f"{secrets.token_hex(16)}{extension}"
-        try:
-            file.save(str(target_dir / filename))
-        except OSError as error:
-            raise ValueError("照片保存失败，请检查项目目录权限。") from error
-        finally:
-            file.stream.close()
-        saved.append((target_dir / filename).relative_to(upload_root).as_posix())
-    return saved
-
-
-def _attachment_urls(raw_attachments):
-    """把数据库中的 JSON 附件路径转成可直接访问的 URL。"""
-    try:
-        attachments = json.loads(raw_attachments or "[]")
-    except (TypeError, ValueError):
-        attachments = []
-    if not isinstance(attachments, list):
-        return []
-    return [
-        f"/uploads/{str(item).lstrip('/')}"
-        for item in attachments
-        if str(item).strip()
-    ]
-
-
-def _published_item(row):
-    created_at = datetime.datetime.fromisoformat(row["created_at"])
-    if created_at.tzinfo is None:
-        created_at = created_at.replace(tzinfo=datetime.timezone.utc)
-    local_created_at = created_at.astimezone()
-    title = row["title"].strip() or "今日工作进展"
-    content = (row["content"] or "").strip()
-    sections = parse_progress_sections(content)
-    section_items = [
-        {"label": label, "text": sections[field]}
-        for field, label in (
-            ("finished", "完成事项"),
-            ("problems", "问题与风险"),
-            ("next_steps", "下一步计划"),
-        )
-        if sections[field]
-    ]
-    return {
-        "id": f"publish-{row['id']}",
-        "work_date": row["work_date"],
-        "created_at": row["created_at"],
-        "local_created_at": local_created_at.strftime("%Y-%m-%d %H:%M"),
-        "relative_time": _relative_time(row["created_at"]),
-        "title": title,
-        "content": content,
-        "status": sections["status"] or "未标记状态",
-        "report_detail": row["report_detail"] if "report_detail" in row.keys() else "标准",
-        "attachments": _attachment_urls(
-            row["attachments"] if "attachments" in row.keys() else "[]"
-        ),
-        "sections": section_items,
-        "source_url": row["source_url"],
-        "member": row["member"],
-        "source_type": "成员日报",
-        "repository": "",
-        "sha_short": "",
-        "additions": 0,
-        "deletions": 0,
-        "changed_files": 0,
-    }
-
-
-def _github_item(row):
-    committed_at = datetime.datetime.fromisoformat(row["committed_at_utc"])
-    if committed_at.tzinfo is None:
-        committed_at = committed_at.replace(tzinfo=datetime.timezone.utc)
-    local_created_at = committed_at.astimezone()
-    message = (row["message"] or "").strip()
-    return {
-        "id": f"github-{row['id']}",
-        "work_date": row["work_date"],
-        "created_at": row["committed_at_utc"],
-        "local_created_at": local_created_at.strftime("%Y-%m-%d %H:%M"),
-        "relative_time": _relative_time(row["committed_at_utc"]),
-        "title": message.splitlines()[0] if message else "无提交说明",
-        "content": message,
-        "source_url": row["commit_url"],
-        "member": row["member"],
-        "source_type": "GitHub 提交",
-        "repository": row["repository"],
-        "sha_short": (row["sha"] or "")[:7],
-        "additions": row["additions"],
-        "deletions": row["deletions"],
-        "changed_files": row["changed_files"],
-    }
-
-
-def _feishu_item(row):
-    created_at = datetime.datetime.fromisoformat(row["created_at_utc"])
-    if created_at.tzinfo is None:
-        created_at = created_at.replace(tzinfo=datetime.timezone.utc)
-    local_created_at = created_at.astimezone()
-    summary = (row["summary"] or "").strip()
-    title = " ".join(summary.split())[:80] or "无消息内容"
-    return {
-        "id": f"feishu-{row['id']}",
-        "work_date": row["work_date"],
-        "created_at": row["created_at_utc"],
-        "local_created_at": local_created_at.strftime("%Y-%m-%d %H:%M"),
-        "relative_time": _relative_time(row["created_at_utc"]),
-        "title": title,
-        "content": summary,
-        "source_url": "",
-        "member": row["member_name"],
-        "source_type": "飞书群聊",
-        "repository": "",
-        "sha_short": "",
-        "additions": 0,
-        "deletions": 0,
-        "changed_files": 0,
-        "status": row["msg_type"] or "消息",
-        "channel": row["chat_name"],
-        "message_type": row["msg_type"] or "消息",
-    }
+def csrf_redirect(endpoint="home", **values):
+    """CSRF 校验失败的页面式处理：闪提示后跳回指定页面。"""
+    flash(CSRF_ERROR, "error")
+    return redirect(url_for(endpoint, **values))
 
 
 def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
@@ -646,13 +138,6 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
     )
     Path(app.config["UPLOAD_FOLDER"]).mkdir(parents=True, exist_ok=True)
 
-    def csrf_token():
-        token = session.get("csrf_token")
-        if not token:
-            token = secrets.token_urlsafe(32)
-            session["csrf_token"] = token
-        return token
-
     @app.context_processor
     def inject_template_context():
         notifications = []
@@ -669,16 +154,13 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
                         (session["user_id"],),
                     ).fetchall()
                 for row in rows:
-                    created_at = datetime.datetime.fromisoformat(row["created_at"])
-                    if created_at.tzinfo is None:
-                        created_at = created_at.replace(tzinfo=datetime.timezone.utc)
                     if not row["read_at"]:
                         unread_notifications += 1
                     notifications.append({
                         "id": row["id"],
                         "title": row["title"],
                         "read": bool(row["read_at"]),
-                        "created_at": created_at.astimezone().strftime("%m月%d日 %H:%M"),
+                        "created_at": local_label(row["created_at"]),
                     })
             except sqlite3.Error:
                 notifications = []
@@ -694,11 +176,6 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
             },
         }
 
-    def csrf_valid():
-        supplied = request.form.get("csrf_token", "")
-        expected = session.get("csrf_token", "")
-        return bool(supplied and expected and hmac.compare_digest(supplied, expected))
-
     def save_email_channel(
         sender_email,
         recipient_email,
@@ -707,7 +184,7 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
         recipient_email_3="",
     ):
         sender_email = (sender_email or "").strip()
-        recipients = _normalize_recipients(
+        recipients = normalize_recipients(
             recipient_email,
             recipient_email_2,
             recipient_email_3,
@@ -719,27 +196,21 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
             store_smtp_password(sender_email, smtp_password)
         if sender_email:
             write_local_smtp_config(sender_email)
+
+        slot_1, slot_2, slot_3 = recipient_slots(recipients)
         with database_connection(app.config["DATABASE_PATH"]) as connection:
             connection.execute(
                 """UPDATE publisher_users
                    SET sender_email = ?, notification_email = ?,
                        notification_email_2 = ?, notification_email_3 = ?
                    WHERE id = ?""",
-                (
-                    sender_email,
-                    recipients[0] if len(recipients) > 0 else "",
-                    recipients[1] if len(recipients) > 1 else "",
-                    recipients[2] if len(recipients) > 2 else "",
-                    session["user_id"],
-                ),
+                (sender_email, slot_1, slot_2, slot_3, session["user_id"]),
             )
-        session["sender_email"] = sender_email
-        session["notification_email"] = recipients[0] if recipients else ""
-        session["notification_email_2"] = (
-            recipients[1] if len(recipients) > 1 else ""
-        )
-        session["notification_email_3"] = (
-            recipients[2] if len(recipients) > 2 else ""
+        session.update(
+            sender_email=sender_email,
+            notification_email=slot_1,
+            notification_email_2=slot_2,
+            notification_email_3=slot_3,
         )
         return recipients
 
@@ -761,9 +232,9 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
         """给多个收件人分别发送邮件，并逐条记录发送结果。"""
         settings = smtp_settings_from_env(sender_email)
         subject = f"研一 {session['display_name']} {work_date} 智能日报"
-        sent = []
-        failed = []
+        sent, failed = [], []
         for recipient in recipients:
+            error_message = ""
             try:
                 send_progress_email(
                     settings,
@@ -781,44 +252,32 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
                     attachments=attachments,
                 )
             except EmailNotificationError as error:
-                with database_connection(app.config["DATABASE_PATH"]) as connection:
-                    _record_email_delivery(
-                        connection,
-                        session["user_id"],
-                        sender_email,
-                        recipient,
-                        subject,
-                        delivery_type,
-                        work_date,
-                        "failed",
-                        str(error),
-                    )
-                failed.append((recipient, str(error)))
+                error_message = str(error)
+                failed.append((recipient, error_message))
             else:
-                with database_connection(app.config["DATABASE_PATH"]) as connection:
-                    _record_email_delivery(
-                        connection,
-                        session["user_id"],
-                        sender_email,
-                        recipient,
-                        subject,
-                        delivery_type,
-                        work_date,
-                        "sent",
-                    )
                 sent.append(recipient)
+            with database_connection(app.config["DATABASE_PATH"]) as connection:
+                record_email_delivery(
+                    connection,
+                    session["user_id"],
+                    sender_email,
+                    recipient,
+                    subject,
+                    delivery_type,
+                    work_date,
+                    "failed" if error_message else "sent",
+                    error_message,
+                )
         return sent, failed
 
     @app.get("/uploads/<path:filename>")
+    @login_required
     def uploaded_file(filename):
-        if "user_id" not in session:
-            return redirect(url_for("login"))
         return send_from_directory(app.config["UPLOAD_FOLDER"], filename)
 
     @app.get("/sources")
+    @login_required
     def select_source():
-        if "user_id" not in session:
-            return redirect(url_for("login"))
 
         with database_connection(app.config["DATABASE_PATH"]) as connection:
             user_row = connection.execute(
@@ -855,9 +314,8 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
         )
 
     @app.get("/")
+    @login_required
     def home():
-        if "user_id" not in session:
-            return redirect(url_for("login"))
         source_switch = request.args.get("source")
         if source_switch in ("github", "feishu"):
             session["selected_source"] = source_switch
@@ -916,55 +374,15 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
                 "SELECT COUNT(*) FROM records WHERE category = 'collaborations' AND work_date = ?",
                 (today.isoformat(),),
             ).fetchone()[0]
-            activity_items = []
-            activity_count = 0
-            sync_status = None
-            if selected_source == "github" and selected_repository:
-                activity_rows = connection.execute(
-                    """SELECT id, repository, sha, work_date, message, additions,
-                              deletions, changed_files, commit_url, committed_at_utc,
-                              member_name AS member
-                       FROM github_commits
-                       WHERE repository = ?
-                       ORDER BY committed_at_utc DESC, id DESC
-                       LIMIT 12""",
-                    (selected_repository,),
-                ).fetchall()
-                activity_items = [_github_item(row) for row in activity_rows]
-                activity_count = connection.execute(
-                    "SELECT COUNT(*) FROM github_commits WHERE repository = ?",
-                    (selected_repository,),
-                ).fetchone()[0]
-                sync_status = connection.execute(
-                    """SELECT status, commit_count, completed_at_utc, error_message
-                       FROM github_sync_runs
-                       WHERE repository = ?
-                       ORDER BY id DESC LIMIT 1""",
-                    (selected_repository,),
-                ).fetchone()
-            elif selected_source == "feishu" and selected_feishu_chat_id:
-                activity_rows = connection.execute(
-                    """SELECT id, message_id, chat_id, chat_name, sender_id,
-                              member_name, msg_type, work_date, summary,
-                              created_at_utc, collected_at_utc
-                       FROM feishu_messages
-                       WHERE chat_id = ?
-                       ORDER BY created_at_utc DESC, id DESC
-                       LIMIT 12""",
-                    (selected_feishu_chat_id,),
-                ).fetchall()
-                activity_items = [_feishu_item(row) for row in activity_rows]
-                activity_count = connection.execute(
-                    "SELECT COUNT(*) FROM feishu_messages WHERE chat_id = ?",
-                    (selected_feishu_chat_id,),
-                ).fetchone()[0]
-                sync_status = connection.execute(
-                    """SELECT status, message_count, completed_at_utc, error_message
-                       FROM feishu_sync_runs
-                       WHERE chat_id = ?
-                       ORDER BY id DESC LIMIT 1""",
-                    (selected_feishu_chat_id,),
-                ).fetchone()
+            activity_scope = (
+                selected_repository
+                if selected_source == "github"
+                else selected_feishu_chat_id
+            )
+            snapshot = activity_snapshot(connection, selected_source, activity_scope)
+            activity_items = snapshot["items"]
+            activity_count = snapshot["count"]
+            sync_status = snapshot["sync"]
             email_row = connection.execute(
                 """SELECT sender_email, notification_email,
                           notification_email_2, notification_email_3
@@ -991,9 +409,6 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
             "feishu_sync": "飞书同步",
         }
         for delivery in delivery_rows:
-            created_at = datetime.datetime.fromisoformat(delivery["created_at"])
-            if created_at.tzinfo is None:
-                created_at = created_at.replace(tzinfo=datetime.timezone.utc)
             email_deliveries.append({
                 "sender_email": delivery["sender_email"],
                 "recipient_email": delivery["recipient_email"],
@@ -1005,7 +420,7 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
                 "status_label": "已发送" if delivery["status"] == "sent" else "发送失败",
                 "work_date": delivery["work_date"],
                 "error_message": delivery["error_message"],
-                "created_at": created_at.astimezone().strftime("%m月%d日 %H:%M"),
+                "created_at": local_label(delivery["created_at"]),
             })
         workspace_label = "当前仓库" if selected_source == "github" else "当前群聊"
         if selected_source == "github" and selected_repository:
@@ -1059,11 +474,10 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
         )
 
     @app.get("/archive")
+    @login_required
     def archive_page():
-        if "user_id" not in session:
-            return redirect(url_for("login"))
         try:
-            date_from, date_to = _date_window(
+            date_from, date_to = date_window(
                 request.args.get("from"),
                 request.args.get("to"),
                 default_days=30,
@@ -1072,7 +486,7 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
             return Response(str(error), status=400, content_type="text/plain; charset=utf-8")
 
         query = request.args.get("q", "").strip().lower()
-        page = _parse_page(request.args.get("page"))
+        page = parse_page(request.args.get("page"))
         published_items = []
         github_items = []
         feishu_items = []
@@ -1135,9 +549,9 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
                        ORDER BY work_date DESC, created_at_utc DESC, id DESC"""
                 ).fetchall()
 
-        published_items = [_published_item(row) for row in published_rows]
-        github_items = [_github_item(row) for row in github_rows]
-        feishu_items = [_feishu_item(row) for row in feishu_rows]
+        published_items = [published_item(row) for row in published_rows]
+        github_items = [github_item(row) for row in github_rows]
+        feishu_items = [feishu_item(row) for row in feishu_rows]
         items = published_items + github_items + feishu_items
         items.sort(key=lambda item: (item["work_date"], item["created_at"]), reverse=True)
 
@@ -1182,11 +596,10 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
         )
 
     @app.get("/github")
+    @login_required
     def github_activity_page():
-        if "user_id" not in session:
-            return redirect(url_for("login"))
         try:
-            date_from, date_to = _date_window(
+            date_from, date_to = date_window(
                 request.args.get("from"),
                 request.args.get("to"),
                 default_days=30,
@@ -1207,7 +620,7 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
             session["selected_source"] = "github"
 
         query = request.args.get("q", "").strip().lower()
-        page = _parse_page(request.args.get("page"))
+        page = parse_page(request.args.get("page"))
         conditions = []
         parameters = []
         if date_from and date_to:
@@ -1245,7 +658,7 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
                     (repository,),
                 ).fetchone()
 
-        items = [_github_item(row) for row in rows]
+        items = [github_item(row) for row in rows]
         if query:
             items = [
                 item
@@ -1301,11 +714,10 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
         )
 
     @app.get("/feishu")
+    @login_required
     def feishu_page():
-        if "user_id" not in session:
-            return redirect(url_for("login"))
         try:
-            date_from, date_to = _date_window(
+            date_from, date_to = date_window(
                 request.args.get("from"),
                 request.args.get("to"),
                 default_days=30,
@@ -1314,7 +726,7 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
             return Response(str(error), status=400, content_type="text/plain; charset=utf-8")
 
         query = request.args.get("q", "").strip().lower()
-        page = _parse_page(request.args.get("page"))
+        page = parse_page(request.args.get("page"))
         with database_connection(app.config["DATABASE_PATH"]) as connection:
             user_row = connection.execute(
                 """SELECT feishu_app_id, feishu_chat_id, feishu_chat_name,
@@ -1375,7 +787,7 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
                 {"chat_id": chat_id, "chat_name": chat_name, "description": ""},
             ]
 
-        items = [_feishu_item(row) for row in rows]
+        items = [feishu_item(row) for row in rows]
         if query:
             items = [
                 item
@@ -1432,12 +844,10 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
         )
 
     @app.post("/feishu/settings")
+    @login_required
     def save_feishu_settings():
-        if "user_id" not in session:
-            return redirect(url_for("login"))
         if not csrf_valid():
-            flash("页面已过期，请刷新后重试。", "error")
-            return redirect(url_for("home", _anchor="activity-stream"))
+            return csrf_redirect("home", _anchor="activity-stream")
 
         action = request.form.get("action", "connect")
         entered_app_id = request.form.get("app_id", "").strip()
@@ -1539,12 +949,10 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
         return redirect(url_for("home"))
 
     @app.post("/feishu/sync")
+    @login_required
     def sync_feishu():
-        if "user_id" not in session:
-            return redirect(url_for("login"))
         if not csrf_valid():
-            flash("页面已过期，请刷新后重试。", "error")
-            return redirect(url_for("feishu_page"))
+            return csrf_redirect("feishu_page")
 
         with database_connection(app.config["DATABASE_PATH"]) as connection:
             user_row = connection.execute(
@@ -1617,12 +1025,10 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
         return redirect(url_for("home", _anchor="activity-stream"))
 
     @app.post("/feishu/send")
+    @login_required
     def send_feishu_messages():
-        if "user_id" not in session:
-            return redirect(url_for("login"))
         if not csrf_valid():
-            flash("页面已过期，请刷新后重试。", "error")
-            return redirect(url_for("feishu_page"))
+            return csrf_redirect("feishu_page")
 
         with database_connection(app.config["DATABASE_PATH"]) as connection:
             user_row = connection.execute(
@@ -1643,7 +1049,7 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
         sender_email = (
             user_row["sender_email"] if user_row else ""
         ) or local_sender_email()
-        recipients = _normalize_recipients(
+        recipients = normalize_recipients(
             user_row["notification_email"] if user_row else "",
             user_row["notification_email_2"] if user_row else "",
             user_row["notification_email_3"] if user_row else "",
@@ -1660,7 +1066,7 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
         work_date = draft.get("work_date", "") or datetime.date.today().isoformat()
 
         with database_connection(app.config["DATABASE_PATH"]) as connection:
-            stream_label, stream_items = _stream_for_publish(
+            stream_label, stream_items = stream_for_publish(
                 connection, "feishu", chat_id, None, work_date
             )
 
@@ -1697,9 +1103,8 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
         return redirect(url_for("feishu_page"))
 
     @app.route("/repository", methods=["GET", "POST"])
+    @login_required
     def select_repository():
-        if "user_id" not in session:
-            return redirect(url_for("login"))
         if request.method == "POST":
             if not csrf_valid():
                 flash("页面已过期，请刷新后重试。", "error")
@@ -1853,9 +1258,8 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
         return render_template("register.html")
 
     @app.post("/logout")
+    @csrf_protected
     def logout():
-        if not csrf_valid():
-            return Response("页面已过期，请刷新后重试。", status=400, content_type="text/plain; charset=utf-8")
         with database_connection(app.config["DATABASE_PATH"]) as connection:
             log_audit(
                 connection,
@@ -1868,12 +1272,10 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
         return redirect(url_for("login"))
 
     @app.post("/email/settings")
+    @login_required
     def save_email_settings():
-        if "user_id" not in session:
-            return redirect(url_for("login"))
         if not csrf_valid():
-            flash("页面已过期，请刷新后重试。", "error")
-            return redirect(url_for("home", _anchor="daily-form"))
+            return csrf_redirect("home", _anchor="daily-form")
         sender_email = (
             request.form.get("sender_email", "").strip()
             or local_sender_email()
@@ -1901,12 +1303,10 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
         return redirect(url_for("home", _anchor="daily-form"))
 
     @app.post("/email/test")
+    @login_required
     def test_email_settings():
-        if "user_id" not in session:
-            return redirect(url_for("login"))
         if not csrf_valid():
-            flash("页面已过期，请刷新后重试。", "error")
-            return redirect(url_for("home", _anchor="daily-form"))
+            return csrf_redirect("home", _anchor="daily-form")
         sender_email = (
             request.form.get("sender_email", "").strip()
             or local_sender_email()
@@ -1934,12 +1334,10 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
         return redirect(url_for("home", _anchor="daily-form"))
 
     @app.post("/save-progress-draft")
+    @login_required
     def save_progress_draft():
-        if "user_id" not in session:
-            return redirect(url_for("login"))
         if not csrf_valid():
-            flash("页面已过期，请刷新后重试。", "error")
-            return redirect(url_for("home", _anchor="daily-form"))
+            return csrf_redirect("home", _anchor="daily-form")
         session["progress_draft"] = {
             "work_date": request.form.get("work_date", "").strip(),
             "status": request.form.get("status", "已完成").strip() or "已完成",
@@ -1973,12 +1371,10 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
         return redirect(url_for("home", _anchor="daily-form"))
 
     @app.post("/publish")
+    @login_required
     def publish():
-        if "user_id" not in session:
-            return redirect(url_for("login"))
         if not csrf_valid():
-            flash("页面已过期，请刷新后重试。", "error")
-            return redirect(url_for("home"))
+            return csrf_redirect("home")
         sender_email = (
             request.form.get("sender_email", "").strip()
             or local_sender_email()
@@ -2055,7 +1451,7 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
             flash("日报质量提示：" + " ".join(quality_messages), "warning")
         attachment_paths = []
         try:
-            attachment_paths = _save_uploaded_attachments(
+            attachment_paths = save_uploaded_attachments(
                 request.files.getlist("attachments"),
                 app.config["UPLOAD_FOLDER"],
             )
@@ -2095,7 +1491,7 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
             stream_label = None
             stream_items = []
             with database_connection(app.config["DATABASE_PATH"]) as connection:
-                stream_label, stream_items = _stream_for_publish(
+                stream_label, stream_items = stream_for_publish(
                     connection,
                     session.get("selected_source"),
                     session.get("selected_feishu_chat_id"),
@@ -2141,12 +1537,10 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
         return redirect(url_for("home", _anchor="daily-form"))
 
     @app.post("/github/sync")
+    @login_required
     def sync_github():
-        if "user_id" not in session:
-            return redirect(url_for("login"))
         if not csrf_valid():
-            flash("页面已过期，请刷新后重试。", "error")
-            return redirect(url_for("home"))
+            return csrf_redirect("home")
         selected_repository = session.get("selected_repository")
         if not selected_repository:
             return redirect(url_for("select_repository"))
@@ -2212,12 +1606,10 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
         return redirect(url_for("home", _anchor="activity-stream"))
 
     @app.post("/github/send")
+    @login_required
     def send_github_commits():
-        if "user_id" not in session:
-            return redirect(url_for("login"))
         if not csrf_valid():
-            flash("页面已过期，请刷新后重试。", "error")
-            return redirect(url_for("github_activity_page"))
+            return csrf_redirect("github_activity_page")
 
         selected_repository = session.get("selected_repository")
         if not selected_repository:
@@ -2234,7 +1626,7 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
         sender_email = (
             user_row["sender_email"] if user_row else ""
         ) or local_sender_email()
-        recipients = _normalize_recipients(
+        recipients = normalize_recipients(
             user_row["notification_email"] if user_row else "",
             user_row["notification_email_2"] if user_row else "",
             user_row["notification_email_3"] if user_row else "",
@@ -2248,7 +1640,7 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
         work_date = draft.get("work_date", "") or datetime.date.today().isoformat()
 
         with database_connection(app.config["DATABASE_PATH"]) as connection:
-            stream_label, stream_items = _stream_for_publish(
+            stream_label, stream_items = stream_for_publish(
                 connection, "github", None, selected_repository, work_date
             )
 
@@ -2289,11 +1681,9 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
         return redirect(url_for("github_activity_page"))
 
     @app.post("/notifications/<int:notification_id>/read")
+    @login_required
+    @csrf_protected
     def mark_notification_read(notification_id):
-        if "user_id" not in session:
-            return redirect(url_for("login"))
-        if not csrf_valid():
-            return Response("页面已过期，请刷新后重试。", status=400, content_type="text/plain; charset=utf-8")
         with database_connection(app.config["DATABASE_PATH"]) as connection:
             connection.execute(
                 """UPDATE user_notifications
@@ -2311,11 +1701,9 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
         return redirect(next_url)
 
     @app.post("/notifications/read-all")
+    @login_required
+    @csrf_protected
     def mark_all_notifications_read():
-        if "user_id" not in session:
-            return redirect(url_for("login"))
-        if not csrf_valid():
-            return Response("页面已过期，请刷新后重试。", status=400, content_type="text/plain; charset=utf-8")
         with database_connection(app.config["DATABASE_PATH"]) as connection:
             connection.execute(
                 """UPDATE user_notifications
