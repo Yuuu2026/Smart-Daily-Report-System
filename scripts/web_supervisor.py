@@ -169,7 +169,7 @@ def ensure_runner(previous_state: list[bool]) -> None:
 
     以前这里用 ``schtasks /Run``，runner 的 run.cmd 会带出控制台窗口
     （就是用户看到的「1 file(s) copied. / Connected to GitHub」弹窗），
-    因此改为直接执行 Runner.Listener.exe 并加 CREATE_NO_WINDOW。
+    因此改为直接执行 Runner.Listener.exe，并以 DETACHED_PROCESS 脱离控制台。
     """
     if process_running(RUNNER_IMAGE):
         if previous_state and previous_state[0] is False:
@@ -198,7 +198,8 @@ def ensure_runner(previous_state: list[bool]) -> None:
             stdin=subprocess.DEVNULL,
             stdout=handle,
             stderr=subprocess.STDOUT,
-            creationflags=NO_WINDOW,
+            # 与 Flask 子进程一致：脱离控制台，守护重启时 runner 不会被连带结束
+            creationflags=DETACHED_FLAGS,
             env=runner_env(),
             close_fds=True,
         )
