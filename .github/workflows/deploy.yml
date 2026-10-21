@@ -63,12 +63,10 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = 'Continue'
+          $root = 'C:\Users\Lenovo\dailyreport'
 
-          # 结束常驻任务（其子进程树一并终止）
-          schtasks /End /TN "DailyReportWeb" | Out-Null
-          Start-Sleep -Seconds 3
-
-          # 兜底：强制释放 5000 / 5001
+          # Release 5000 / 5001: the resident supervisor (pythonw) will respawn
+          # the Flask apps within ~30s, and the health check below waits for it.
           foreach ($port in 5000, 5001) {
             $conns = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue
             foreach ($c in $conns) {
@@ -78,9 +76,9 @@ jobs:
           }
           Start-Sleep -Seconds 2
 
-          schtasks /Run /TN "DailyReportWeb" | Out-Null
-          if ($LASTEXITCODE -ne 0) { throw "Failed to start DailyReportWeb task" }
-          Write-Host "Service task started."
+          # Make sure the supervisor itself is alive (singleton: extra runs exit at once).
+          Start-ScheduledTask -TaskName 'DailyReportWebGuard' -ErrorAction SilentlyContinue
+          Write-Host "Supervisor task signalled."
 
       - name: 健康检查
         shell: powershell

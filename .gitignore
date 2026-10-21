@@ -17,3 +17,8 @@ dist_site/
 .workbuddy/feishu_qr*.png
 .workbuddy/qr_data.txt
 .webguard.log
+.web.out.log
+.web.err.log
+.guard_err.log
+.guard_out.log
+.guard_probe.log

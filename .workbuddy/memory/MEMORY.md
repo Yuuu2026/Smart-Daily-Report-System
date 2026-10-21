@@ -17,13 +17,17 @@
   用计划任务 `GitHubActionsRunner`（登录自启）拉起，无管理员权限故未装系统服务。`.env` 里配了代理。
 - 部署步骤：`git fetch` + `merge --ff-only` → `pip install -r web/requirements.txt` → 重启 → 健康检查 → 汇总。
 - 部署/运行路径：`C:\Users\Lenovo\dailyreport`（**指向项目真实目录的 junction**，规避中文路径在 Windows PowerShell 5.1 下的编码问题）。**项目目录若改名/移动，junction 会失效，需重建**。
-- 网站常驻：计划任务 `DailyReportWeb` 运行 `scripts/run_web.cmd`（内部设 `START_WEB_NO_WATCHDOG=1`、`START_WEB_NO_BROWSER=1`）。
-  部署时用 `schtasks /End` + `/Run` 重启，这样进程不被 runner 的 job 结束清理杀掉。
+- 网站常驻：计划任务 `DailyReportWebGuard` 用 `pyw.exe -3.12 scripts\web_supervisor.py` 拉起**单个常驻守护进程**
+  （GUI 子系统，全程无窗口），守护每 30s 检查 5000/5001，掉线则用 `DETACHED_PROCESS` 重新拉起对应 Flask 应用。
+  部署时结束端口占用进程即可，守护约 30s 内自动恢复（`deploy.yml` 已改为这种方式）。
+- 旧的 `DailyReportWeb`（`run_web.cmd` + cmd 控制台）已删除：控制台被回收时 python 会收到
+  `0xC000013A (STATUS_CONTROL_C_EXIT)` 静默退出，是站点反复掉线的根因。
 - 架构注意：`deploy.yml` 里的 PowerShell **必须全 ASCII**（runner 以无 BOM UTF-8 写脚本，PS 5.1 会按 GBK 解析导致中文乱码）。
 - 手动重部署：Actions → Deploy → Run workflow。回滚：`git revert` 后 push，会自动部署回滚版本。
 
 ## 本地运行
-- 手动启动：`START_WEB_NO_WATCHDOG=1 py -3.12 start_web.py`（日常更推荐用计划任务 `DailyReportWeb` 常驻）
+- 手动启动：`START_WEB_NO_WATCHDOG=1 py -3.12 start_web.py`（日常不用管，计划任务 `DailyReportWebGuard` 已常驻）
+- 手动修复一次：`py -3.12 scripts/web_supervisor.py --once`（端口 5099 单例锁，与常驻守护不冲突）
 - 不设该变量时，start_web.py 的看门狗每 2s 检测站点，偶发超时即杀进程，后台跑会被误杀。
 - `START_WEB_NO_BROWSER=1` 可阻止启动时自动弹浏览器（CD 部署时必设，否则每次部署弹窗）。
 - 两个服务：5000 归档端、5001 发布端。模板改动需重启 Flask 才生效（debug 关闭时模板被缓存）。
@@ -40,5 +44,7 @@
 - 发布：`.github/workflows/pages.yml` 在 Deploy 成功后于本机 runner 导出并 `push --force` 到 `gh-pages` 分支（临时目录建仓，不污染工作区）。
 - 站点：https://yuuu2026.github.io/Smart-Daily-Report-System/ ，仓库 Settings → Pages 需设为「分支 gh-pages / root」。
 - 导出内容会公开（成员姓名 + 工作进展），默认不含成员上传图片。
-- 服务守护：计划任务 `DailyReportWebGuard` 每 1 分钟巡检 5000/5001，掉线则强杀残留监听进程并重启 `DailyReportWeb`（日志 `.webguard.log`）。
-  **已知现象**：每次 Deploy/Pages 任务结束后 python 子进程会被清掉、任务状态变 Ready，守护会在 1 分钟内自动拉起。
+- 服务守护：见上文「CD」小节 —— `scripts/web_supervisor.py` + 计划任务 `DailyReportWebGuard`（pythonw 无窗口常驻，30s 巡检）。
+  日志 `.webguard.log`（守护事件）、`.web.out.log`（Flask 输出），两者都已忽略。
+- 排查经验：用户反馈「每分钟弹终端窗口」= 计划任务用 `powershell.exe -WindowStyle Hidden` 每分钟触发，Hidden 只隐藏窗口自身、
+  控制台仍会闪。改用 GUI 子系统的 `pyw.exe` 常驻单进程后彻底无窗口；`wscript` 被安全策略拦截、S4U 需管理员权限，都不可用。
