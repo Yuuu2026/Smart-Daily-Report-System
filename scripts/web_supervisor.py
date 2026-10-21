@@ -40,9 +40,13 @@ LOG_MAX_BYTES = 256 * 1024
 # (port, script) started with the current interpreter, cwd = web/
 SERVICES = ((5000, "app.py"), (5001, "publisher_app.py"))
 
-# GitHub Actions runner 由计划任务托管，挂了会让 CD 一直排队；这里只负责把它唤醒。
+# GitHub Actions runner 由本守护直接托管（不再走带控制台的 run.cmd / 计划任务）。
+RUNNER_DIR = Path(r"C:\Users\Lenovo\actions-runner")
+RUNNER_EXE = RUNNER_DIR / "bin" / "Runner.Listener.exe"
+RUNNER_ENV_PATH = RUNNER_DIR / ".env"
+RUNNER_LOG_PATH = PROJECT_ROOT / ".runner.out.log"
 RUNNER_IMAGE = "Runner.Listener.exe"
-RUNNER_TASK = "GitHubActionsRunner"
+RUNNER_RETRY_SECONDS = 120  # 连续失败时最多每 2 分钟重试一次，避免刷屏/弹窗
 
 # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP: no console, survives its parent.
 DETACHED_FLAGS = 0x00000008 | 0x00000200
@@ -161,25 +165,60 @@ def process_running(image_name: str) -> bool:
 
 
 def ensure_runner(previous_state: list[bool]) -> None:
-    """runner 掉线时唤醒对应计划任务；只在状态变化时写日志。"""
-    alive = process_running(RUNNER_IMAGE)
-    if alive:
+    """runner 掉线时以无窗口方式直接拉起 Runner.Listener，并限制重试频率。
+
+    以前这里用 ``schtasks /Run``，runner 的 run.cmd 会带出控制台窗口
+    （就是用户看到的「1 file(s) copied. / Connected to GitHub」弹窗），
+    因此改为直接执行 Runner.Listener.exe 并加 CREATE_NO_WINDOW。
+    """
+    if process_running(RUNNER_IMAGE):
         if previous_state and previous_state[0] is False:
             log("GitHub Actions runner 已恢复")
-        previous_state[:] = [True]
+        previous_state[:] = [True, time.monotonic()]
         return
-    if not previous_state or previous_state[0] is not False:
-        log(f"{RUNNER_IMAGE} 未运行，请求计划任务 {RUNNER_TASK} 启动")
-    previous_state[:] = [False]
+
+    last_attempt = previous_state[1] if len(previous_state) > 1 else 0.0
+    if time.monotonic() - last_attempt < RUNNER_RETRY_SECONDS:
+        return
+    previous_state[:] = [False, time.monotonic()]
+
+    if not RUNNER_EXE.exists():
+        log(f"找不到 {RUNNER_EXE}，跳过 runner 守护")
+        return
+
+    log(f"{RUNNER_IMAGE} 未运行，正在以无窗口方式启动")
     try:
-        subprocess.run(
-            ["schtasks", "/Run", "/TN", RUNNER_TASK],
-            capture_output=True,
-            timeout=30,
+        OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+        handle = RUNNER_LOG_PATH.open("a", encoding="utf-8", errors="replace")
+        handle.write(f"\n===== {now()} start runner =====\n")
+        handle.flush()
+        subprocess.Popen(
+            [str(RUNNER_EXE), "run"],
+            cwd=str(RUNNER_DIR),
+            stdin=subprocess.DEVNULL,
+            stdout=handle,
+            stderr=subprocess.STDOUT,
             creationflags=NO_WINDOW,
+            env=runner_env(),
+            close_fds=True,
         )
+        handle.close()
     except (OSError, subprocess.SubprocessError) as error:
-        log(f"启动 runner 任务失败：{error!r}")
+        log(f"启动 runner 失败：{error!r}")
+
+
+def runner_env() -> dict[str, str]:
+    """继承当前环境，并叠加 actions-runner/.env（代理等）。"""
+    env = os.environ.copy()
+    try:
+        for line in RUNNER_ENV_PATH.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                key, value = line.split("=", 1)
+                env[key.strip()] = value.strip()
+    except OSError:
+        pass
+    return env
 
 
 def main(argv: list[str]) -> int:

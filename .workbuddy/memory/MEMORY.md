@@ -14,7 +14,9 @@
 ## CD（2026-10-20 接通）
 - 链路：push master → `CI` 成功 → `Deploy`（workflow_run 触发）在本机自托管 runner 上部署。
 - runner：`C:\Users\Lenovo\actions-runner`，名称 `Lenovo-Desktop`，标签 `self-hosted/windows/x64/local-deploy`；
-  用计划任务 `GitHubActionsRunner`（登录自启）拉起，无管理员权限故未装系统服务。`.env` 里配了代理。
+  **由 `web_supervisor.py` 直接 `CREATE_NO_WINDOW` 启动 `bin\Runner.Listener.exe run`**（读 `actions-runner\.env` 的代理），
+  日志 `.runner.out.log`，掉线最多每 120s 重试一次。**计划任务 `GitHubActionsRunner` 已删除**：
+  它走 `run.cmd`，每次启动弹控制台并打印 `1 file(s) copied.` / `√ Connected to GitHub`，用户可见。
 - 部署步骤：`git fetch` + `merge --ff-only` → `pip install -r web/requirements.txt` → 重启 → 健康检查 → 汇总。
 - 部署/运行路径：`C:\Users\Lenovo\dailyreport`（**指向项目真实目录的 junction**，规避中文路径在 Windows PowerShell 5.1 下的编码问题）。**项目目录若改名/移动，junction 会失效，需重建**。
 - 网站常驻：计划任务 `DailyReportWebGuard` 用 `pyw.exe -3.12 scripts\web_supervisor.py` 拉起**单个常驻守护进程**
