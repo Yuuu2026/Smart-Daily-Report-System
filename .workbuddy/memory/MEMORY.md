@@ -9,7 +9,9 @@
   `git config --global http.https://github.com.proxy http://127.0.0.1:7897`
   代理未开时报 `Recv failure: Connection was reset`（非认证问题）。
 - CI：`.github/workflows/ci.yml`，push/PR 到 main|master 时在 ubuntu-latest + Python 3.12 上跑
-  `python -m unittest discover -v`，真实发现 36 个测试。公开仓库 Actions 免费无限额度。
+  `python -m unittest discover -v`，真实发现 40 个测试。公开仓库 Actions 免费无限额度。
+- 想验证整条流水线是否还能跑通时，用 `git commit --allow-empty` 发空提交即可（会完整触发 CI → Deploy → Pages），
+  **不要往公开仓库塞"测试用"的无用代码**。
 
 ## CD（2026-10-20 接通）
 - 链路：push master → `CI` 成功 → `Deploy`（workflow_run 触发）在本机自托管 runner 上部署。
