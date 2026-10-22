@@ -274,6 +274,7 @@
             <button class="sync-button" type="submit">立即同步</button>
           </form>
           {% if session.get('selected_source') == 'feishu' and session.get('selected_feishu_chat_id') %}
+            <a class="button-text activity-reselect-link" href="{{ url_for('feishu_page') }}">查看群聊消息</a>
             <a class="button-text activity-reselect-link" href="{{ url_for('home', reselect_chat=1) }}">切换群聊</a>
           {% endif %}
           {% if session.get('selected_source') == 'github' %}

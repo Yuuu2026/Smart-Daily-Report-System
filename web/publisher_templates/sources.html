@@ -6,8 +6,8 @@
   <section class="page-hero sources-page-hero">
     <div>
       <p class="page-eyebrow">DATA SOURCES</p>
-      <h1>接入设置</h1>
-      <p>选择 GitHub 仓库或飞书群聊作为当前日报数据接口。</p>
+      <h1>接入配置</h1>
+      <p>选择 GitHub 或飞书作为日报数据接口，确认后进入对应的工作界面。</p>
     </div>
     <div class="page-metric">
       <strong>2</strong>
@@ -31,9 +31,7 @@
         <strong>{{ selected_repository or '未连接仓库' }}</strong>
         <span>{% if github_selected %}当前接口 · 已连接仓库{% else %}提交记录与代码变更数据源{% endif %}</span>
       </div>
-      <a class="dashboard-primary" href="{{ url_for('home', source='github') }}">
-        {% if selected_repository %}进入工作台{% else %}选择仓库{% endif %}
-      </a>
+      <a class="dashboard-primary" href="{{ url_for('home', source='github') }}">进入 GitHub</a>
     </article>
 
     <article class="source-choice-card {% if feishu_selected %}is-selected{% endif %}">
@@ -45,11 +43,9 @@
         <strong>{{ feishu_chat_name or '未选择群聊' }}</strong>
         <span>{% if feishu_selected %}当前接口 · 已连接群聊{% else %}群聊消息与协作记录数据源{% endif %}</span>
       </div>
-      <a class="dashboard-primary" href="{{ url_for('home', source='feishu') }}">
-        {% if feishu_chat_id %}进入工作台{% else %}配置群聊{% endif %}
-      </a>
+      <a class="dashboard-primary" href="{{ url_for('home', source='feishu') }}">进入飞书</a>
     </article>
   </section>
 
-  <footer class="dashboard-footer">接口切换只影响当前工作台的来源标识 · 归档保留全部已同步数据</footer>
+  <footer class="dashboard-footer">选择接口后进入对应的工作界面 · 归档保留全部已同步数据</footer>
 {% endblock %}

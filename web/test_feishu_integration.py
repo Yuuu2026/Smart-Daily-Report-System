@@ -64,7 +64,7 @@ class FeishuIntegrationTests(unittest.TestCase):
         page = response.get_data(as_text=True)
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn("接入设置", page)
+        self.assertIn("接入配置", page)
         self.assertIn("GitHub 仓库", page)
         self.assertIn("飞书群聊", page)
 

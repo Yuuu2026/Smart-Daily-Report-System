@@ -69,22 +69,28 @@ class AuthNavigationLinkTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("工作台", response.get_data(as_text=True))
 
-    def test_archive_is_the_first_nav_item(self):
+    def test_navigation_has_only_archive_and_sources(self):
         self._login(self.client)
 
         page = self.client.get("/archive").get_data(as_text=True)
+        nav_start = page.index('class="dashboard-nav"')
+        nav = page[nav_start:page.index("</nav>", nav_start)]
 
-        self.assertLess(page.index("日报归档"), page.index("工作台"))
+        self.assertIn('href="/archive"', nav)
+        self.assertIn('href="/sources"', nav)
+        self.assertNotIn("工作台", nav)
+        self.assertNotIn("GitHub 活动", nav)
+        self.assertLess(nav.index("日报归档"), nav.index("接入配置"))
 
-    def test_navigation_exposes_github_activity(self):
+    def test_sources_page_offers_both_modules_and_keeps_nav(self):
         self._login(self.client)
-        with self.client.session_transaction() as flask_session:
-            flask_session["selected_source"] = "github"
 
-        for path in ("/archive", "/workbench", "/github"):
-            with self.subTest(path=path):
-                page = self.client.get(path).get_data(as_text=True)
-                self.assertIn('href="/github"', page)
+        page = self.client.get("/sources").get_data(as_text=True)
+
+        self.assertIn("接入配置", page)
+        self.assertIn('href="/sources"', page)
+        self.assertIn('href="/workbench?source=github"', page)
+        self.assertIn('href="/workbench?source=feishu"', page)
 
 
 if __name__ == "__main__":

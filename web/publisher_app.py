@@ -307,9 +307,9 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
             github_selected=selected_source == "github" and bool(selected_repository),
             feishu_selected=selected_source == "feishu" and bool(feishu_chat_id),
             active_page="sources",
-            page_title="接入设置",
-            breadcrumb_title="接入设置",
-            breadcrumb_subtitle="选择日报数据接口",
+            page_title="接入配置",
+            breadcrumb_title="接入配置",
+            breadcrumb_subtitle="选择 GitHub 或飞书",
             search_target=url_for("archive_page"),
         )
 
