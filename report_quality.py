@@ -1,6 +1,7 @@
 """检查成员日报内容的粒度，输出可操作的中文提示。"""
 
 SECTION_LABELS = {
+    "solved": "解决的问题",
     "finished": "完成事项",
     "problems": "问题与风险",
     "next_steps": "下一步计划",

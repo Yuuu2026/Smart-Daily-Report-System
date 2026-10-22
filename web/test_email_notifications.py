@@ -288,6 +288,53 @@ class SmtpSettingsTests(unittest.TestCase):
         self.assertIn("最近代码改动", body)
         self.assertIn("web/dashboard.html", body)
 
+    def test_progress_email_renders_solved_section_and_workload_chart(self):
+        settings = email_notifications.SmtpSettings(
+            host="smtp.qq.com", port=465, username="sender@qq.com",
+            password="authorization-code", sender="sender@qq.com", secure="ssl",
+        )
+        workload = {
+            "days": [
+                {"date": "2026-10-20", "weekday": "周二", "total": 1,
+                 "is_today": False, "is_peak": False},
+                {"date": "2026-10-21", "weekday": "周三", "total": 0,
+                 "is_today": False, "is_peak": False},
+                {"date": "2026-10-22", "weekday": "周四", "total": 3,
+                 "is_today": True, "is_peak": True},
+            ],
+            "peak": 3,
+            "total": 4,
+            "average": 1.3,
+        }
+        with patch.object(email_notifications, "_send_message") as send_message:
+            email_notifications.send_progress_email(
+                settings, "recipient@example.com", "张三", "2026-10-22",
+                "", "", "补齐回归测试",
+                solved="修好了邮件图表渲染",
+                workload=workload,
+            )
+        body = send_message.call_args.args[2].get_content()
+        self.assertIn("解决的问题", body)
+        self.assertIn("修好了邮件图表渲染", body)
+        self.assertIn("近 7 天工作量", body)
+        self.assertIn("近 3 天共 4 条", body)
+        self.assertEqual(body.count("bgcolor="), 3)
+        self.assertIn("10月", body)
+
+    def test_progress_email_without_workload_omits_chart(self):
+        settings = email_notifications.SmtpSettings(
+            host="smtp.qq.com", port=465, username="sender@qq.com",
+            password="authorization-code", sender="sender@qq.com", secure="ssl",
+        )
+        with patch.object(email_notifications, "_send_message") as send_message:
+            email_notifications.send_progress_email(
+                settings, "recipient@example.com", "张三", "2026-10-22",
+                "", "", "补齐回归测试",
+            )
+        body = send_message.call_args.args[2].get_content()
+        self.assertNotIn("近 7 天工作量", body)
+        self.assertNotIn("解决的问题", body)
+
     def test_github_sync_email_uses_structured_daily_report_format(self):
         settings = email_notifications.SmtpSettings(
             host="smtp.qq.com",

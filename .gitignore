@@ -23,3 +23,6 @@ dist_site/
 .guard_out.log
 .guard_probe.log
 .runner.out.log
+
+# 本地预览截图（不参与版本管理）
+.preview/

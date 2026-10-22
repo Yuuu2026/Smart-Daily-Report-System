@@ -126,6 +126,7 @@ def published_item(row):
     content = (row["content"] or "").strip()
     sections = parse_progress_sections(content)
     labels = (
+        ("solved", "解决的问题"),
         ("finished", "完成事项"),
         ("problems", "问题与风险"),
         ("next_steps", "下一步计划"),
@@ -237,6 +238,92 @@ def activity_snapshot(connection, source, identifier, limit=12):
     count = connection.execute(spec["count"], (identifier,)).fetchone()[0]
     sync = connection.execute(spec["sync"], (identifier,)).fetchone()
     return {"items": [spec["build"](row) for row in rows], "count": count, "sync": sync}
+
+
+# --------------------------------------------------------------------------
+# 工作量统计
+# --------------------------------------------------------------------------
+
+WEEKDAY_LABELS = ("周一", "周二", "周三", "周四", "周五", "周六", "周日")
+WORKLOAD_SOURCES = (
+    ("reports", "日报", "SELECT work_date, COUNT(*) FROM published_items "
+                        "WHERE work_date BETWEEN ? AND ? GROUP BY work_date"),
+    ("tasks", "任务记录", "SELECT work_date, COUNT(*) FROM records "
+                         "WHERE category = 'tasks' AND work_date BETWEEN ? AND ? "
+                         "GROUP BY work_date"),
+    ("collaborations", "协作记录", "SELECT work_date, COUNT(*) FROM records "
+                                  "WHERE category = 'collaborations' "
+                                  "AND work_date BETWEEN ? AND ? GROUP BY work_date"),
+    ("commits", "代码提交", "SELECT work_date, COUNT(*) FROM github_commits "
+                           "WHERE work_date BETWEEN ? AND ? GROUP BY work_date"),
+    ("messages", "群聊消息", "SELECT work_date, COUNT(*) FROM feishu_messages "
+                            "WHERE work_date BETWEEN ? AND ? GROUP BY work_date"),
+)
+
+
+def workload_series(connection, end_date, days=7):
+    """按天统计最近 N 天归档的进展条目，供工作台与邮件画柱状图。
+
+    工作量口径固定为「当天归档的进展条目数」：日报 + 任务记录 + 协作记录
+    + 代码提交 + 群聊消息。既反映实际产出，也不会因为某个数据源没接入而失真。
+    """
+    if isinstance(end_date, str):
+        end_date = datetime.date.fromisoformat(end_date)
+    days = max(3, min(int(days or 7), 31))
+    start_date = end_date - datetime.timedelta(days=days - 1)
+    start, end = start_date.isoformat(), end_date.isoformat()
+
+    buckets = {}
+    cursor = start_date
+    while cursor <= end_date:
+        buckets[cursor.isoformat()] = {"total": 0}
+        cursor += datetime.timedelta(days=1)
+
+    for key, _label, sql in WORKLOAD_SOURCES:
+        try:
+            rows = connection.execute(sql, (start, end)).fetchall()
+        except sqlite3.Error:
+            continue
+        for row in rows:
+            bucket = buckets.get(str(row[0]))
+            if bucket is None:
+                continue
+            bucket[key] = int(row[1] or 0)
+            bucket["total"] += int(row[1] or 0)
+
+    series = []
+    for day_text, bucket in buckets.items():
+        day = datetime.date.fromisoformat(day_text)
+        series.append({
+            "date": day_text,
+            "month_day": f"{day.month}/{day.day}",
+            "day": day.day,
+            "weekday": WEEKDAY_LABELS[day.weekday()],
+            "is_today": day == end_date,
+            "is_weekend": day.weekday() >= 5,
+            "total": bucket["total"],
+            "reports": bucket.get("reports", 0),
+            "tasks": bucket.get("tasks", 0),
+            "collaborations": bucket.get("collaborations", 0),
+            "commits": bucket.get("commits", 0),
+            "messages": bucket.get("messages", 0),
+        })
+
+    peak = max((item["total"] for item in series), default=0)
+    for item in series:
+        item["percent"] = round(item["total"] * 100 / peak) if peak else 0
+        item["is_peak"] = bool(peak and item["total"] == peak)
+
+    total = sum(item["total"] for item in series)
+    active_days = sum(1 for item in series if item["total"])
+    return {
+        "days": series,
+        "peak": peak,
+        "total": total,
+        "active_days": active_days,
+        "average": round(total / len(series), 1) if series else 0,
+        "span_label": f"{start_date.month}月{start_date.day}日 - {end_date.month}月{end_date.day}日",
+    }
 
 
 # --------------------------------------------------------------------------

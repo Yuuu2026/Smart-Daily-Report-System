@@ -363,28 +363,150 @@ def _email_section(icon, title, lines, accent="#3d78f5"):
     items = "".join(f"<li>{_html_lines(line)}</li>" for line in lines)
     return (
         '<table width="100%" cellpadding="0" cellspacing="0" role="presentation" '
-        f'style="margin:14px 0 0;border-left:4px solid {accent};'
-        'border-radius:10px;background:#f7f9ff;">'
-        '<tr><td style="padding:15px 18px;">'
-        f'<div style="font-size:14px;font-weight:700;color:#26314d;">'
-        f'{icon} {_html_escape(title)}</div>'
-        f'<ul style="margin:10px 0 0;padding-left:18px;color:#46516a;'
-        f'font-size:13px;line-height:1.75;">{items}</ul>'
+        'style="margin:12px 0 0;">'
+        '<tr><td style="border:1px solid #e8edf9;border-left:4px solid '
+        f'{accent};border-radius:12px;background-color:#fbfcff;padding:15px 18px;">'
+        '<table width="100%" cellpadding="0" cellspacing="0" role="presentation"><tr>'
+        '<td width="26" valign="top" '
+        f'style="padding:0;font-size:17px;line-height:24px;">{icon}</td>'
+        '<td valign="top" style="padding:0;">'
+        '<div style="font-size:14px;font-weight:700;color:#26314d;line-height:1.5;">'
+        f"{_html_escape(title)}</div>"
+        '<ul style="margin:8px 0 0;padding-left:0;list-style:none;color:#46516a;'
+        f'font-size:13px;line-height:1.8;">{items}</ul>'
+        "</td></tr></table>"
         "</td></tr></table>"
     )
 
 
-def _email_wrapper(header_title, header_subtitle, meta_items, sections, footer_note):
-    """生成浅色卡片式 HTML 邮件，头像区用蓝色渐变和装饰图标。"""
+def _email_stat_cards(cards):
+    """一行等宽数据卡片；cards 为 [(标签, 数值, 说明, 色值)]。"""
+    cards = [card for card in cards or []][:4]
+    if not cards:
+        return ""
+    width = round(100 / len(cards))
+    cells = ""
+    for label, value, hint, accent in cards:
+        cells += (
+            f'<td width="{width}%" valign="top" style="padding:0 4px;">'
+            '<table width="100%" cellpadding="0" cellspacing="0" role="presentation" '
+            'style="border:1px solid #e6ecfa;border-radius:12px;'
+            'background-color:#f8faff;">'
+            '<tr><td style="padding:13px 14px 12px;">'
+            '<div style="font-size:11px;color:#8a94ab;letter-spacing:0.5px;">'
+            f"{_html_escape(label)}</div>"
+            '<div style="font-size:22px;font-weight:800;line-height:1.35;'
+            f'margin-top:4px;color:{accent};">{_html_escape(value)}</div>'
+            '<div style="font-size:11px;color:#9aa3b8;margin-top:2px;">'
+            f"{_html_escape(hint)}</div>"
+            "</td></tr></table></td>"
+        )
+    return (
+        '<table width="100%" cellpadding="0" cellspacing="0" role="presentation" '
+        f'style="margin:12px 0 4px;"><tr>{cells}</tr></table>'
+    )
+
+
+def _email_bar_chart(title, series, caption=""):
+    """用表格实现柱状图：邮件客户端不支持 JavaScript，只能堆 td 高度。"""
+    days = (series or {}).get("days") or []
+    if not days:
+        return ""
+    peak = int((series or {}).get("peak") or 0)
+    max_bar_height = 74
+    cells = ""
+    for day in days:
+        total = int(day.get("total") or 0)
+        if not total:
+            height, fill = 6, "#e6ebf7"
+        else:
+            height = max(12, round(total * max_bar_height / peak)) if peak else 12
+            if day.get("is_today"):
+                fill = "#3d78f5"
+            elif day.get("is_peak"):
+                fill = "#7d99f8"
+            else:
+                fill = "#c2d1fa"
+        label_color = "#26314d" if day.get("is_today") else "#5b6a82"
+        cells += (
+            '<td width="14%" align="center" valign="bottom" style="padding:0 3px;">'
+            '<div style="font-size:11px;font-weight:700;line-height:16px;'
+            f'color:{label_color};">{total}</div>'
+            '<table width="100%" cellpadding="0" cellspacing="0" role="presentation" '
+            'style="height:84px;"><tr>'
+            '<td valign="bottom" height="84" style="height:84px;">'
+            '<table width="100%" cellpadding="0" cellspacing="0" role="presentation">'
+            f'<tr><td height="{height}" bgcolor="{fill}" style="height:{height}px;'
+            'border-radius:5px 5px 0 0;font-size:0;line-height:0;">&nbsp;</td></tr>'
+            "</table></td></tr></table>"
+            '<div style="font-size:11px;line-height:18px;'
+            f'color:{label_color};">{_html_escape(day.get("weekday", ""))}</div>'
+            "</td>"
+        )
+    stats = (
+        f'近 {len(days)} 天共 {int(series.get("total") or 0)} 条 · '
+        f'日均 {series.get("average", 0)} 条'
+    )
+    return (
+        '<table width="100%" cellpadding="0" cellspacing="0" role="presentation" '
+        'style="margin:16px 0 0;border:1px solid #e6ecfa;border-radius:14px;'
+        'background-color:#ffffff;">'
+        '<tr><td style="padding:16px 18px 14px;">'
+        '<div style="font-size:14px;font-weight:700;color:#26314d;">'
+        f"{_html_escape(title)}</div>"
+        '<div style="font-size:11px;color:#8a94ab;margin-top:3px;">'
+        f"{_html_escape(caption or stats)}</div>"
+        '<table width="100%" cellpadding="0" cellspacing="0" role="presentation" '
+        f'style="margin-top:12px;"><tr>{cells}</tr></table>'
+        '<div style="font-size:11px;color:#a3abbd;margin-top:6px;text-align:right;">'
+        f"{_html_escape(stats)}</div>"
+        "</td></tr></table>"
+    )
+
+
+def _email_wrapper(
+    header_title,
+    header_subtitle,
+    meta_items,
+    sections,
+    footer_note,
+    summary="",
+    stats="",
+    chart="",
+    badge=None,
+):
+    """生成浅色卡片式 HTML 邮件：品牌头图 + 数据卡片 + 段落 + 柱状图。"""
     meta_chips = ""
     for label, value in meta_items:
         meta_chips += (
             '<div style="display:inline-block;margin:0 8px 8px 0;'
             'padding:6px 11px;border:1px solid #e2e8ff;border-radius:999px;'
-            'background:#f7f9ff;color:#6b7690;font-size:12px;">'
+            'background-color:#f7f9ff;color:#6b7690;font-size:12px;">'
             f'<span style="color:#98a2bb;">{_html_escape(label)}</span> '
-            f'<strong style="color:#34405a;font-weight:700;">'
-            f'{_html_escape(value)}</strong></div>'
+            '<strong style="color:#34405a;font-weight:700;">'
+            f"{_html_escape(value)}</strong></div>"
+        )
+    badge_html = ""
+    if badge:
+        badge_top, badge_bottom = badge
+        badge_html = (
+            '<td width="108" align="right" valign="top" '
+            'style="padding:26px 24px 0 0;">'
+            '<table cellpadding="0" cellspacing="0" role="presentation" '
+            'style="border-radius:14px;background-color:#ffffff;">'
+            '<tr><td align="center" style="padding:10px 16px 8px;color:#3d78f5;">'
+            '<div style="font-size:11px;font-weight:700;letter-spacing:1px;">'
+            f"{_html_escape(badge_top)}</div>"
+            '<div style="font-size:26px;font-weight:800;line-height:1.2;">'
+            f"{_html_escape(badge_bottom)}</div>"
+            "</td></tr></table></td>"
+        )
+    summary_html = ""
+    if summary:
+        summary_html = (
+            '<div style="margin:4px 0 6px;padding:13px 16px;border-radius:12px;'
+            'background-color:#f2f6ff;border:1px solid #e4ebff;color:#33405c;'
+            f'font-size:13px;line-height:1.7;">{_html_escape(summary)}</div>'
         )
     body_sections = "\n".join(sections)
     return f"""<!doctype html>
@@ -394,29 +516,35 @@ def _email_wrapper(header_title, header_subtitle, meta_items, sections, footer_n
          style="background-color:#eef3ff;padding:28px 12px;">
     <tr>
       <td align="center">
-        <table width="640" cellpadding="0" cellspacing="0" role="presentation"
-               style="width:100%;max-width:640px;background-color:#ffffff;
-                      border:1px solid #e3e9ff;border-radius:16px;overflow:hidden;">
+        <table width="660" cellpadding="0" cellspacing="0" role="presentation"
+               style="width:100%;max-width:660px;background-color:#ffffff;
+                      border:1px solid #e3e9ff;border-radius:18px;overflow:hidden;">
           <tr>
             <td style="background-color:#3d78f5;
-                       background-image:linear-gradient(135deg,rgba(255,255,255,0.16) 25%,transparent 25%),
-                       linear-gradient(225deg,rgba(255,255,255,0.12) 25%,transparent 25%);
-                       background-size:28px 28px;
-                       padding:26px 30px 24px;color:#ffffff;">
-              <div style="font-size:12px;font-weight:700;letter-spacing:2px;
-                          opacity:0.85;">SMART DAILY REPORT</div>
-              <div style="font-size:23px;font-weight:800;margin-top:8px;
-                          line-height:1.3;">{_html_escape(header_title)}</div>
-              <div style="font-size:13px;margin-top:7px;opacity:0.92;
-                          line-height:1.6;">{_html_escape(header_subtitle)}</div>
-              <div style="font-size:18px;letter-spacing:6px;margin-top:14px;
-                          opacity:0.9;">📌 ☑️ 📬</div>
+                       background-image:linear-gradient(135deg,#4a6bff 0%,#3d78f5 48%,#5b8ef8 100%);
+                       padding:0;">
+              <table width="100%" cellpadding="0" cellspacing="0" role="presentation">
+                <tr>
+                  <td valign="top" style="padding:26px 10px 24px 28px;color:#ffffff;">
+                    <div style="font-size:11px;font-weight:700;letter-spacing:2.4px;
+                                color:#dbe4ff;">SMART DAILY REPORT</div>
+                    <div style="font-size:23px;font-weight:800;margin-top:9px;
+                                line-height:1.3;">{_html_escape(header_title)}</div>
+                    <div style="font-size:13px;margin-top:7px;color:#e6ecff;
+                                line-height:1.6;">{_html_escape(header_subtitle)}</div>
+                  </td>
+                  {badge_html}
+                </tr>
+              </table>
             </td>
           </tr>
           <tr>
             <td style="padding:22px 26px 26px;">
               <div style="margin-bottom:2px;">{meta_chips}</div>
+              {summary_html}
+              {stats}
               {body_sections}
+              {chart}
               <div style="margin-top:22px;padding-top:16px;border-top:1px solid #eef1f8;
                           text-align:center;color:#9aa3b8;font-size:11px;line-height:1.7;">
                 🤖 智能日报系统自动生成 · {_html_escape(footer_note)}
@@ -467,6 +595,14 @@ def send_test_email(settings, recipient):
         [("收件人", recipient.strip()), ("生成时间", generated_at)],
         sections,
         f"{generated_at} · 本机邮件配置验证通过",
+        summary="这是一封测试邮件：收到它说明发件邮箱、授权码与收件地址都已配置正确。",
+        stats=_email_stat_cards(
+            [
+                ("发件通道", "已连通", settings.host, "#22c55e"),
+                ("加密方式", settings.secure.upper(), f"端口 {settings.port}", "#3d78f5"),
+                ("收件人", "1 位", "本次测试", "#6366f1"),
+            ]
+        ),
     )
     message.set_content(
         html_body,
@@ -491,8 +627,10 @@ def send_progress_email(
     attachments=None,
     recent_changes=None,
     recent_changes_text=None,
+    solved="",
+    workload=None,
 ):
-    """发送一条包含工作进展与数据流水的纯文本邮件。"""
+    """发送一条包含工作进展与数据流水的 HTML 邮件。"""
     if settings is None:
         raise EmailNotificationError("SMTP 邮件服务未配置。")
     if not is_valid_email(recipient):
@@ -515,8 +653,13 @@ def send_progress_email(
     sections = []
     if report_detail == "简洁":
         concise_lines = [
-            part.strip()
-            for part in (finished, problems, next_steps)
+            f"{label}：{part.strip()}"
+            for label, part in (
+                ("解决问题", solved),
+                ("完成事项", finished),
+                ("问题与风险", problems),
+                ("下一步", next_steps),
+            )
             if part and part.strip()
         ]
         progress_text = "；".join(concise_lines) or "（未填写）"
@@ -528,6 +671,7 @@ def send_progress_email(
                 _email_section("🔁", stream_label or "数据流水", stream_lines, accent="#8b5cf6")
             )
     elif report_detail == "详细":
+        solved_text = solved or "（未填写）"
         finished_text = finished or "（未填写）"
         problems_text = problems or "（未填写）"
         next_text = next_steps or "（未填写）"
@@ -536,13 +680,15 @@ def send_progress_email(
                 "🧮",
                 "系统自动汇总",
                 [
-                    f"已完成 {1 if finished.strip() else 0} 项主要进展，"
-                    f"记录 {1 if problems.strip() else 0} 项问题风险，"
+                    f"解决 {1 if solved.strip() else 0} 项问题，"
+                    f"完成 {1 if finished.strip() else 0} 项主要进展，"
+                    f"记录 {1 if problems.strip() else 0} 项风险，"
                     f"规划 {1 if next_steps.strip() else 0} 项后续任务。"
                 ],
                 accent="#38bdf8",
             )
         )
+        sections.append(_email_section("🎯", "解决的问题", [solved_text], accent="#14b8a6"))
         sections.append(_email_section("✅", "完成事项", [finished_text], accent="#22c55e"))
         sections.append(_email_section("⚠️", "问题与风险", [problems_text], accent="#f59e0b"))
         sections.append(_email_section("🧭", "下一步计划", [next_text], accent="#3d78f5"))
@@ -551,6 +697,10 @@ def send_progress_email(
                 _email_section("🔁", stream_label or "数据流水", stream_lines, accent="#8b5cf6")
             )
     else:
+        if solved:
+            sections.append(
+                _email_section("🎯", "解决的问题", [f"- [成员发布] {solved}"], accent="#14b8a6")
+            )
         for icon, title, value, accent in (
             ("✅", "完成事项", finished, "#22c55e"),
             ("⚠️", "问题与风险", problems, "#f59e0b"),
@@ -583,6 +733,28 @@ def send_progress_email(
             _email_section("🗂️", "最近代码改动", change_lines, accent="#426fa6")
         )
 
+    word_count = len("".join(f"{solved}{finished}{problems}{next_steps}".split()))
+    stat_cards = [("日报字数", f"{word_count}", "本次填写", "#3d78f5")]
+    if solved:
+        stat_cards.append(("解决问题", "1 项", "已闭环", "#14b8a6"))
+    if next_steps:
+        stat_cards.append(("下一步", "1 项", "待推进", "#6366f1"))
+    if recent_changes:
+        stat_cards.append(("代码改动", f"{len(recent_changes)} 条", "随日报发送", "#426fa6"))
+    if workload and workload.get("total"):
+        stat_cards.append(
+            ("近 7 天", f"{workload['total']} 条", "累计进展", "#f59e0b")
+        )
+
+    headline = compact_progress_text(
+        solved or finished or next_steps or "本次日报已归档，详情见下方。", 52
+    )
+    summary_line = f"本次重点 · {headline}"
+    badge = None
+    date_parts = str(work_date).split("-")
+    if len(date_parts) == 3:
+        badge = (f"{int(date_parts[1])}月", str(int(date_parts[2])))
+
     html_body = _email_wrapper(
         f"研一 {display_name} 智能日报",
         f"{work_date} · {status}",
@@ -593,6 +765,10 @@ def send_progress_email(
         ],
         sections,
         f"{generated_at} · 数据来源：成员发布",
+        summary=summary_line,
+        stats=_email_stat_cards(stat_cards),
+        chart=_email_bar_chart("近 7 天工作量", workload, "按天统计归档的进展条目数"),
+        badge=badge,
     )
     message.set_content(
         html_body,

@@ -145,6 +145,45 @@
   </section>
   {% endif %}
 
+  {% if workload %}
+  <section class="workload-section" aria-label="近 7 天工作量">
+    <div class="section-heading">
+      <h2>近 7 天工作量</h2>
+      <span>{{ workload.span_label }} · 共 {{ workload.total }} 条进展</span>
+    </div>
+    <div class="workload-card">
+      <div class="workload-metrics">
+        <div class="workload-metric">
+          <strong>{{ workload.total }}</strong>
+          <span>条进展</span>
+        </div>
+        <div class="workload-metric">
+          <strong>{{ workload.average }}</strong>
+          <span>日均条数</span>
+        </div>
+        <div class="workload-metric">
+          <strong>{{ workload.active_days }}</strong>
+          <span>天有产出</span>
+        </div>
+        <p class="workload-note">按天统计归档的进展条目：日报 + 任务记录 + 协作记录 + 代码提交 + 群聊消息</p>
+      </div>
+      <div class="workload-chart" role="img"
+           aria-label="近 7 天每天归档的进展条目数柱状图，共 {{ workload.total }} 条">
+        {% for day in workload.days %}
+          {% set bar_height = day.percent if day.percent > 4 else 4 %}
+          <div class="workload-column {% if day.is_today %}is-today{% elif day.is_peak %}is-peak{% endif %}">
+            <span class="workload-value">{{ day.total }}</span>
+            <div class="workload-track">
+              <div class="workload-bar" style="height: {{ bar_height }}%"></div>
+            </div>
+            <span class="workload-label">{{ day.weekday }}<small>{{ day.month_day }}</small></span>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+  {% endif %}
+
   <section class="progress-section" id="daily-form">
     <div class="section-heading">
       <h2>今日工作进展</h2>
@@ -158,12 +197,17 @@
       </label>
       {% include "_recent_code_changes.html" %}
       <label class="progress-question">
-        <span class="question-title"><i>1</i>下一步准备做什么？</span>
+        <span class="question-title"><i>1</i>解决了什么问题？</span>
+        <textarea name="solved" rows="2"
+                  placeholder="例如：邮件发送失败时不再整页报错，改为逐条记录失败原因"></textarea>
+      </label>
+      <label class="progress-question">
+        <span class="question-title"><i>2</i>下一步准备做什么？</span>
         <textarea name="next_steps" rows="2"
                   placeholder="例如：验证邮件发送流程，补充页面级回归测试"></textarea>
       </label>
       <label class="progress-photos">
-        <span class="question-title"><i>2</i>添加照片</span>
+        <span class="question-title"><i>3</i>添加照片</span>
         <input id="attachments" type="file" name="attachments" accept="image/*" multiple>
         <small>最多 6 张，支持 JPG、PNG、GIF、WebP；会随日报发送并保存到归档</small>
       </label>
@@ -223,7 +267,7 @@
         </section>
       {% endif %}
       <div class="progress-actions">
-        <span>填写下一步计划，或勾选要发送的代码改动后即可发布</span>
+        <span>填写解决的问题或下一步计划，或勾选要发送的代码改动后即可发布</span>
         <div>
           <button class="button-text" type="submit" name="publish_action" value="save_only">
             仅保存到日报归档

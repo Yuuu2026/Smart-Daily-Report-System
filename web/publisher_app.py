@@ -74,6 +74,7 @@ from web.publisher_repo import (
     start_feishu_auto_sync,
     stop_feishu_auto_sync,
     stream_for_publish,
+    workload_series,
 )
 
 # 列表页每页条数
@@ -287,6 +288,8 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
         attachments=None,
         recent_changes=None,
         recent_changes_text=None,
+        solved="",
+        workload=None,
     ):
         """给多个收件人分别发送邮件，并逐条记录发送结果。"""
         settings = smtp_settings_from_env(sender_email)
@@ -315,6 +318,8 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
                     attachments=attachments,
                     recent_changes=changes,
                     recent_changes_text=recent_changes_text,
+                    solved=solved,
+                    workload=workload,
                 )
             except EmailNotificationError as error:
                 error_message = str(error)
@@ -469,6 +474,7 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
                    LIMIT 5""",
                 (session["user_id"],),
             ).fetchall()
+            workload = workload_series(connection, today, days=7)
         sender_email = email_row["sender_email"] or local_sender_email()
         notification_email = email_row["notification_email"]
         notification_email_2 = email_row["notification_email_2"]
@@ -528,6 +534,7 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
             notification_email_2=notification_email_2,
             notification_email_3=notification_email_3,
             email_deliveries=email_deliveries,
+            workload=workload,
             recent_changes=workbench_changes,
             code_changes_text=format_code_changes(workbench_changes),
             code_changes_editable=True,
@@ -1164,6 +1171,7 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
             source_url=draft.get("source_url", ""),
             stream_items=stream_items,
             stream_label=stream_label,
+            solved=draft.get("solved", ""),
         )
         if failed:
             flash(
@@ -1420,6 +1428,7 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
             "work_date": request.form.get("work_date", "").strip(),
             "status": request.form.get("status", "已完成").strip() or "已完成",
             "source_url": request.form.get("source_url", "").strip(),
+            "solved": request.form.get("solved", "").strip(),
             "finished": request.form.get("finished", "").strip(),
             "problems": request.form.get("problems", "").strip(),
             "next_steps": request.form.get("next_steps", "").strip(),
@@ -1479,6 +1488,7 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
         except EmailNotificationError as error:
             flash(str(error), "error")
             return redirect(url_for("home", _anchor="daily-form"))
+        solved = request.form.get("solved", "").strip()
         finished = request.form.get("finished", "").strip()
         problems = request.form.get("problems", "").strip()
         next_steps = request.form.get("next_steps", "").strip()
@@ -1486,13 +1496,14 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
         title = request.form.get("title", "").strip()
         content = request.form.get("content", "").strip()
         progress_sections = (
+            ("解决的问题", solved),
             ("完成事项", finished),
             ("问题与风险", problems),
             ("下一步计划", next_steps),
         )
         changes, changes_text = chosen_code_changes(recent_code_changes())
-        if not any((finished, problems, next_steps, changes_text, title and content)):
-            flash("请填写下一步计划，或勾选要随日报发送的代码改动后再发布。", "error")
+        if not any((solved, finished, problems, next_steps, changes_text, title and content)):
+            flash("请填写解决了什么问题或下一步计划，或勾选要随日报发送的代码改动后再发布。", "error")
             return redirect(url_for("home", _anchor="daily-form"))
         if any(value for _, value in progress_sections) or changes_text:
             title = title or "今日工作进展"
@@ -1522,6 +1533,7 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
             return redirect(url_for("home"))
         quality_messages = quality_warnings(
             {
+                "solved": solved,
                 "finished": finished,
                 "problems": problems,
                 "next_steps": next_steps,
@@ -1578,6 +1590,7 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
                     session.get("selected_repository"),
                     work_date,
                 )
+                workload = workload_series(connection, parsed_date, days=7)
             sent, failed = deliver_progress_email(
                 sender_email,
                 recipients,
@@ -1593,6 +1606,8 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
                 report_detail=report_detail,
                 recent_changes=changes,
                 recent_changes_text=changes_text,
+                solved=solved,
+                workload=workload,
                 attachments=[
                     str(Path(app.config["UPLOAD_FOLDER"]) / path)
                     for path in attachment_paths
@@ -1742,6 +1757,7 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
             source_url=draft.get("source_url", ""),
             stream_items=stream_items,
             stream_label=stream_label,
+            solved=draft.get("solved", ""),
         )
         if failed:
             flash(

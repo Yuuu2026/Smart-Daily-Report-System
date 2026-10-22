@@ -2772,3 +2772,113 @@ body.dashboard-page { background: #edf1fb; }
   color: #5b6a82;
   font-size: 11px;
 }
+
+/* ============================================================
+   工作台「近 7 天工作量」柱状图
+   作用域限定在 .workload-section，不影响其他页面
+   ============================================================ */
+.dashboard-content .workload-section { margin-bottom: 22px; }
+.dashboard-content .workload-card {
+  display: grid;
+  grid-template-columns: minmax(180px, 220px) minmax(0, 1fr);
+  gap: 26px;
+  align-items: end;
+  padding: 20px 22px 16px;
+  border: 1px solid #e2e9f6;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(18 38 74 / 4%);
+}
+.dashboard-content .workload-metrics {
+  display: grid;
+  gap: 10px;
+  align-content: center;
+}
+.dashboard-content .workload-metric {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.dashboard-content .workload-metric strong {
+  color: #1f2f4a;
+  font-size: 26px;
+  font-weight: 760;
+  line-height: 1;
+}
+.dashboard-content .workload-metric span {
+  color: #6b7a92;
+  font-size: 12px;
+}
+.dashboard-content .workload-note {
+  margin: 4px 0 0;
+  color: #93a0b5;
+  font-size: 11px;
+  line-height: 1.65;
+}
+.dashboard-content .workload-chart {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  align-items: end;
+  gap: 8px;
+  min-height: 148px;
+}
+.dashboard-content .workload-column {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+}
+.dashboard-content .workload-value {
+  color: #5b6a82;
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1;
+}
+.dashboard-content .workload-track {
+  display: flex;
+  align-items: flex-end;
+  width: 100%;
+  max-width: 46px;
+  height: 96px;
+  border-radius: 8px 8px 4px 4px;
+  background: #f1f5fd;
+  padding: 0 4px 0;
+  box-sizing: border-box;
+}
+.dashboard-content .workload-bar {
+  width: 100%;
+  border-radius: 6px 6px 2px 2px;
+  background: linear-gradient(180deg, #b9cbfa 0%, #9fb6f6 100%);
+  transition: height .18s ease;
+}
+.dashboard-content .workload-column.is-peak .workload-bar {
+  background: linear-gradient(180deg, #8fa8f7 0%, #6f8ef7 100%);
+}
+.dashboard-content .workload-column.is-today .workload-value {
+  color: #3d5bd6;
+  font-weight: 750;
+}
+.dashboard-content .workload-column.is-today .workload-bar {
+  background: linear-gradient(180deg, #6f8ef7 0%, #3d78f5 100%);
+}
+.dashboard-content .workload-label {
+  display: grid;
+  justify-items: center;
+  color: #7a889f;
+  font-size: 11px;
+  line-height: 1.35;
+}
+.dashboard-content .workload-label small {
+  color: #a5b0c2;
+  font-size: 10px;
+}
+.dashboard-content .workload-column.is-today .workload-label {
+  color: #34405a;
+  font-weight: 650;
+}
+@media (max-width: 720px) {
+  .dashboard-content .workload-card {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+}

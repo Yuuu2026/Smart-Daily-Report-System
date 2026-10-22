@@ -26,6 +26,7 @@ CATEGORY_ORDER = ("commits", "tasks", "collaborations")
 # 成员发布内容中的新旧段落标签。旧标签用于兼容历史数据库记录。
 PUBLISHED_SECTION_LABELS = {
     "status": ("工作状态",),
+    "solved": ("解决的问题", "解决了什么问题"),
     "finished": ("完成事项", "今天完成了什么"),
     "problems": ("问题与风险", "遇到了什么问题"),
     "next_steps": ("下一步计划", "下一步准备做什么"),

@@ -10,6 +10,7 @@ from web import email_notifications
 from web.app import database_connection, initialize_database
 from web.publisher_app import create_publisher_app, format_code_changes
 from web.publisher_auth import hash_password
+from web.publisher_repo import workload_series
 
 
 class PublisherEmailSettingTests(unittest.TestCase):
@@ -467,6 +468,67 @@ class PublisherEmailSettingTests(unittest.TestCase):
         with database_connection(self.database_path) as connection:
             count = connection.execute("SELECT COUNT(*) FROM published_items").fetchone()[0]
         self.assertEqual(count, 0)
+
+    def test_solved_problem_is_saved_as_its_own_section(self):
+        with patch("web.publisher_app.recent_code_changes", return_value=[]):
+            response = self.client.post("/publish", data={
+                "csrf_token": "test-csrf",
+                "work_date": datetime.date.today().isoformat(),
+                "solved": "邮件发送失败时不再整页报错，改为逐条记录失败原因",
+                "next_steps": "补齐回归测试",
+                "publish_action": "save_only",
+            })
+        self.assertEqual(response.status_code, 302)
+        with database_connection(self.database_path) as connection:
+            content = connection.execute(
+                "SELECT content FROM published_items"
+            ).fetchone()[0]
+        self.assertIn("解决的问题：\n邮件发送失败时不再整页报错", content)
+        self.assertIn("下一步计划：\n补齐回归测试", content)
+        self.assertLess(content.index("解决的问题"), content.index("下一步计划"))
+
+    def test_solved_problem_alone_is_enough_to_publish(self):
+        with patch("web.publisher_app.recent_code_changes", return_value=[]), \
+             patch("web.publisher_app.smtp_settings_from_env", return_value="smtp"), \
+             patch("web.publisher_app.send_progress_email") as send_email:
+            self.client.post("/publish", data={
+                "csrf_token": "test-csrf",
+                "work_date": datetime.date.today().isoformat(),
+                "sender_email": "3247026746@qq.com",
+                "recipient_email": "3247026746@qq.com",
+                "solved": "修好了归档页的时间显示",
+                "publish_action": "save_send",
+            })
+        self.assertEqual(send_email.call_args.kwargs["solved"], "修好了归档页的时间显示")
+
+    def test_workload_series_counts_archived_items_per_day(self):
+        today = datetime.date.today()
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
+        with database_connection(self.database_path) as connection:
+            for offset, count in ((0, 2), (2, 1)):
+                for _ in range(count):
+                    connection.execute(
+                        """INSERT INTO published_items
+                           (publisher_id, work_date, title, content, report_detail,
+                            attachments, source_url, created_at)
+                           VALUES (1, ?, '今日工作进展', '解决的问题：修复时间显示',
+                                   '标准', '[]', NULL, ?)""",
+                        ((today - datetime.timedelta(days=offset)).isoformat(), now),
+                    )
+        with database_connection(self.database_path) as connection:
+            series = workload_series(connection, today, days=7)
+
+        self.assertEqual(len(series["days"]), 7)
+        by_date = {item["date"]: item["total"] for item in series["days"]}
+        self.assertEqual(by_date[today.isoformat()], 2)
+        self.assertEqual(
+            by_date[(today - datetime.timedelta(days=2)).isoformat()], 1
+        )
+        self.assertEqual(series["total"], 3)
+        self.assertEqual(series["peak"], 2)
+        self.assertEqual(series["days"][-1]["percent"], 100)
+        self.assertTrue(series["days"][-1]["is_today"])
+        self.assertTrue(series["days"][-1]["is_peak"])
 
 
 if __name__ == "__main__":
