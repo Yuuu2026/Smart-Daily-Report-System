@@ -21,6 +21,17 @@
     {% endfor %}
   {% endwith %}
 
+  {% if not repository_options and not repository %}
+  <section class="github-settings-panel github-setup-banner" aria-labelledby="github-empty-title">
+    <div class="github-settings-copy">
+      <h2 id="github-empty-title">还没有接入 GitHub 仓库</h2>
+      <span>接入仓库后这里会显示完整提交流水与成员贡献</span>
+      <p>在接入设置里填写 owner/repository，验证通过后即可同步最近 24 小时的提交。</p>
+    </div>
+    <a class="dashboard-primary" href="{{ url_for('select_source') }}">去接入设置</a>
+  </section>
+  {% endif %}
+
   <section class="github-stat-grid" aria-label="GitHub 数据概览">
     <article class="github-stat-card">
       <span class="github-stat-icon is-blue" aria-hidden="true">

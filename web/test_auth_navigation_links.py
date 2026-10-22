@@ -76,6 +76,16 @@ class AuthNavigationLinkTests(unittest.TestCase):
 
         self.assertLess(page.index("日报归档"), page.index("工作台"))
 
+    def test_navigation_exposes_github_activity(self):
+        self._login(self.client)
+        with self.client.session_transaction() as flask_session:
+            flask_session["selected_source"] = "github"
+
+        for path in ("/archive", "/workbench", "/github"):
+            with self.subTest(path=path):
+                page = self.client.get(path).get_data(as_text=True)
+                self.assertIn('href="/github"', page)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -276,6 +276,9 @@
           {% if session.get('selected_source') == 'feishu' and session.get('selected_feishu_chat_id') %}
             <a class="button-text activity-reselect-link" href="{{ url_for('home', reselect_chat=1) }}">切换群聊</a>
           {% endif %}
+          {% if session.get('selected_source') == 'github' %}
+            <a class="button-text activity-reselect-link" href="{{ url_for('github_activity_page') }}">查看全部提交</a>
+          {% endif %}
         </div>
       </div>
 
