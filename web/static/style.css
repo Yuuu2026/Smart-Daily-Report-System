@@ -2717,3 +2717,58 @@ body.dashboard-page { background: #edf1fb; }
   background: linear-gradient(120deg, #e9edff, #f3ecff);
   box-shadow: 0 4px 10px rgb(91 110 246 / 14%);
 }
+
+/* ============================================================
+   工作台「最近代码改动」：发送开关 + 可编辑的发送正文
+   作用域限定在 .workbench-code-changes，不影响其他页面
+   ============================================================ */
+.dashboard-content .workbench-code-changes .code-changes-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 13px;
+  border-top: 1px solid #dce4f1;
+  padding-top: 12px;
+  color: #2c3f5c;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.dashboard-content .workbench-code-changes .code-changes-toggle input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: #4a6bff;
+  cursor: pointer;
+}
+.dashboard-content .workbench-code-changes .code-changes-editor {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+.dashboard-content .workbench-code-changes .code-changes-editor > span {
+  color: #41536f;
+  font-size: 11px;
+  font-weight: 650;
+}
+.dashboard-content .workbench-code-changes .code-changes-editor textarea {
+  width: 100%;
+  border: 1px solid #d5dfee;
+  border-radius: 9px;
+  padding: 9px 11px;
+  background: #fff;
+  color: #2c3f5c;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.65;
+  resize: vertical;
+}
+.dashboard-content .workbench-code-changes .code-changes-editor textarea:focus {
+  outline: none;
+  border-color: #7f93ff;
+  box-shadow: 0 0 0 3px rgb(91 110 246 / 12%);
+}
+.dashboard-content .workbench-code-changes .code-changes-editor small {
+  color: #5b6a82;
+  font-size: 11px;
+}

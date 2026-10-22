@@ -122,6 +122,25 @@ def format_code_changes(changes):
     )
 
 
+MAX_CODE_CHANGES_TEXT = 4000
+
+
+def chosen_code_changes(all_changes):
+    """按工作台表单的勾选决定本次发送哪段代码改动。
+
+    表单带 code_changes_present 标记时以勾选和用户落笔的内容为准；
+    没有该标记（旧表单或脚本调用）沿用「全部附加」的旧行为。
+    """
+    if request.form.get("code_changes_present") != "1":
+        return all_changes, format_code_changes(all_changes)
+    if not all_changes or request.form.get("include_code_changes") != "1":
+        return [], ""
+    typed = request.form.get("code_changes_text", "").strip()
+    if not typed:
+        return [], ""
+    return all_changes, typed[:MAX_CODE_CHANGES_TEXT]
+
+
 def csrf_token():
     """取得（必要时生成并写入会话）当前请求的 CSRF token。"""
     token = session.get("csrf_token")
@@ -267,10 +286,14 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
         report_detail="标准",
         attachments=None,
         recent_changes=None,
+        recent_changes_text=None,
     ):
         """给多个收件人分别发送邮件，并逐条记录发送结果。"""
         settings = smtp_settings_from_env(sender_email)
-        changes = recent_code_changes() if recent_changes is None else recent_changes
+        if recent_changes is None and recent_changes_text is None:
+            changes = recent_code_changes()
+        else:
+            changes = recent_changes or []
         subject = f"研一 {session['display_name']} {work_date} 智能日报"
         sent, failed = [], []
         for recipient in recipients:
@@ -291,6 +314,7 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
                     report_detail=report_detail,
                     attachments=attachments,
                     recent_changes=changes,
+                    recent_changes_text=recent_changes_text,
                 )
             except EmailNotificationError as error:
                 error_message = str(error)
@@ -469,6 +493,7 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
                 "error_message": delivery["error_message"],
                 "created_at": local_label(delivery["created_at"]),
             })
+        workbench_changes = recent_code_changes()
         workspace_label = "当前仓库" if selected_source == "github" else "当前群聊"
         if selected_source == "github" and selected_repository:
             workspace_name = selected_repository
@@ -503,7 +528,9 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
             notification_email_2=notification_email_2,
             notification_email_3=notification_email_3,
             email_deliveries=email_deliveries,
-            recent_changes=recent_code_changes(),
+            recent_changes=workbench_changes,
+            code_changes_text=format_code_changes(workbench_changes),
+            code_changes_editable=True,
             latest_email_delivery=email_deliveries[0] if email_deliveries else None,
             publish_only=publish_only,
             github_needs_setup=github_needs_setup,
@@ -1463,10 +1490,9 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
             ("问题与风险", problems),
             ("下一步计划", next_steps),
         )
-        changes = recent_code_changes()
-        changes_text = format_code_changes(changes)
+        changes, changes_text = chosen_code_changes(recent_code_changes())
         if not any((finished, problems, next_steps, changes_text, title and content)):
-            flash("请填写下一步计划，或等待最近代码改动生成后再发布。", "error")
+            flash("请填写下一步计划，或勾选要随日报发送的代码改动后再发布。", "error")
             return redirect(url_for("home", _anchor="daily-form"))
         if any(value for _, value in progress_sections) or changes_text:
             title = title or "今日工作进展"
@@ -1566,6 +1592,7 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
                 stream_label=stream_label,
                 report_detail=report_detail,
                 recent_changes=changes,
+                recent_changes_text=changes_text,
                 attachments=[
                     str(Path(app.config["UPLOAD_FOLDER"]) / path)
                     for path in attachment_paths

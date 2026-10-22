@@ -1,8 +1,15 @@
 <section class="workbench-code-changes" aria-labelledby="recent-code-changes-title">
+  {% if code_changes_editable %}
+    <input type="hidden" name="code_changes_present" value="1">
+  {% endif %}
   <div class="workbench-code-changes-head">
     <div>
       <h3 id="recent-code-changes-title">最近代码改动</h3>
-      <p>本机 Claude Code 的文件改动摘要；保存日报和发送进展邮件时会附上，不包含完整代码。</p>
+      <p>
+        自动记录的本机代码改动摘要。
+        {% if code_changes_editable %}勾选后会作为「最近代码改动」一段写进日报正文，并随邮件发送给收件人。
+        {% else %}不是 GitHub 提交，也不是日报记录。{% endif %}
+      </p>
     </div>
     <span>最近 {{ recent_changes|length }} 条</span>
   </div>
@@ -16,7 +23,18 @@
         </li>
       {% endfor %}
     </ul>
+    {% if code_changes_editable %}
+      <label class="code-changes-toggle">
+        <input type="checkbox" name="include_code_changes" value="1" checked>
+        <span>把这段改动附加到日报并发送</span>
+      </label>
+      <label class="code-changes-editor" for="code-changes-text">
+        <span>将要发送的内容（可修改）</span>
+        <textarea id="code-changes-text" name="code_changes_text" rows="4">{{ code_changes_text }}</textarea>
+        <small>清空文本框则不会附加这一段；不勾选也不会发送。</small>
+      </label>
+    {% endif %}
   {% else %}
-    <p class="workbench-code-changes-empty">暂无由 Claude Code 记录的代码改动。</p>
+    <p class="workbench-code-changes-empty">暂无自动记录的代码改动。用 Claude Code 修改项目文件后会自动出现在这里。</p>
   {% endif %}
 </section>

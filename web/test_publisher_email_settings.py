@@ -349,6 +349,71 @@ class PublisherEmailSettingTests(unittest.TestCase):
             content = connection.execute("SELECT content FROM published_items").fetchone()[0]
         self.assertIn("web/app.py", content)
 
+    def test_unchecked_code_changes_are_not_published(self):
+        today = datetime.date.today().isoformat()
+        changes = [{"summary": "更新页面样式", "path": "web/static/style.css",
+                    "kind": "修改", "additions": 24, "deletions": 3,
+                    "time": "2026-10-22T09:00+08:00"}]
+        with patch("web.publisher_app.recent_code_changes", return_value=changes), \
+             patch("web.publisher_app.smtp_settings_from_env", return_value="smtp"), \
+             patch("web.publisher_app.write_local_smtp_config"), \
+             patch("web.publisher_app.send_progress_email") as send_email:
+            response = self.client.post("/publish", data={
+                "csrf_token": "test-csrf", "work_date": today,
+                "next_steps": "补充回归检查", "sender_email": "sender@example.com",
+                "recipient_email": "recipient@example.com", "publish_action": "save_send",
+                "code_changes_present": "1",
+                "code_changes_text": format_code_changes(changes),
+            })
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(send_email.call_args.kwargs["recent_changes"], [])
+        with database_connection(self.database_path) as connection:
+            content = connection.execute("SELECT content FROM published_items").fetchone()[0]
+        self.assertIn("补充回归检查", content)
+        self.assertNotIn("最近代码改动", content)
+
+    def test_edited_code_change_wording_is_used_for_archive_and_email(self):
+        today = datetime.date.today().isoformat()
+        changes = [{"summary": "更新页面样式", "path": "web/static/style.css",
+                    "kind": "修改", "additions": 24, "deletions": 3,
+                    "time": "2026-10-22T09:00+08:00"}]
+        wording = "重做了工作台样式，让代码改动可以随日报一起发送"
+        with patch("web.publisher_app.recent_code_changes", return_value=changes), \
+             patch("web.publisher_app.smtp_settings_from_env", return_value="smtp"), \
+             patch("web.publisher_app.write_local_smtp_config"), \
+             patch("web.publisher_app.send_progress_email") as send_email:
+            response = self.client.post("/publish", data={
+                "csrf_token": "test-csrf", "work_date": today,
+                "next_steps": "", "sender_email": "sender@example.com",
+                "recipient_email": "recipient@example.com", "publish_action": "save_send",
+                "code_changes_present": "1", "include_code_changes": "1",
+                "code_changes_text": wording,
+            })
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(send_email.call_args.kwargs["recent_changes_text"], wording)
+        with database_connection(self.database_path) as connection:
+            content = connection.execute("SELECT content FROM published_items").fetchone()[0]
+        self.assertIn(wording, content)
+        self.assertNotIn("web/static/style.css", content)
+
+    def test_workbench_exposes_code_change_send_controls(self):
+        changes = [{"summary": "更新 Python 逻辑", "path": "web/app.py",
+                    "kind": "修改", "additions": 7, "deletions": 0,
+                    "time": "2026-10-22T09:00+08:00"}]
+        with self.client.session_transaction() as flask_session:
+            flask_session["selected_source"] = "feishu"
+        with patch("web.publisher_app.recent_code_changes", return_value=changes):
+            page = self.client.get("/workbench").get_data(as_text=True)
+        self.assertIn('name="include_code_changes"', page)
+        self.assertIn('name="code_changes_text"', page)
+        self.assertIn('name="code_changes_present"', page)
+        self.assertIn("把这段改动附加到日报并发送", page)
+        self.assertIn(format_code_changes(changes), page)
+
+        with patch("web.publisher_app.recent_code_changes", return_value=changes):
+            archive_page = self.client.get("/archive").get_data(as_text=True)
+        self.assertNotIn('name="include_code_changes"', archive_page)
+
     def test_next_steps_alone_can_be_saved_without_code_changes(self):
         with patch("web.publisher_app.recent_code_changes", return_value=[]):
             response = self.client.post("/publish", data={

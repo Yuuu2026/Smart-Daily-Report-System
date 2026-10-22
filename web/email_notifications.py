@@ -490,6 +490,7 @@ def send_progress_email(
     report_detail="标准",
     attachments=None,
     recent_changes=None,
+    recent_changes_text=None,
 ):
     """发送一条包含工作进展与数据流水的纯文本邮件。"""
     if settings is None:
@@ -564,13 +565,20 @@ def send_progress_email(
                 _email_section("🔁", stream_label or "数据流水", stream_lines, accent="#8b5cf6")
             )
 
-    if recent_changes:
-        change_lines = [
-            f"- {item['summary']} · {item['path']}（{item['kind']}，"
-            f"相对 HEAD 累计 +{item['additions']} / −{item['deletions']}，"
-            f"{item['time'][:16].replace('T', ' ')}）"
-            for item in recent_changes
-        ]
+    if recent_changes or recent_changes_text:
+        if recent_changes_text:
+            change_lines = [
+                f"- {line.strip()}"
+                for line in recent_changes_text.splitlines()
+                if line.strip()
+            ]
+        else:
+            change_lines = [
+                f"- {item['summary']} · {item['path']}（{item['kind']}，"
+                f"相对 HEAD 累计 +{item['additions']} / −{item['deletions']}，"
+                f"{item['time'][:16].replace('T', ' ')}）"
+                for item in recent_changes
+            ]
         sections.append(
             _email_section("🗂️", "最近代码改动", change_lines, accent="#426fa6")
         )
