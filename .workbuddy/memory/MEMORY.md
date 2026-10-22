@@ -53,6 +53,16 @@
 - `dashboard_shell.html` 顶层 `{% set %}` 会遮蔽 render_template 传入的同名变量（Jinja extends），同类命名需避开（如 `workspace_display`）。
 - 工作台接入卡片：飞书 `.feishu-setup-banner`、GitHub `.github-setup-banner`，由 `feishu_needs_setup` / `github_needs_setup` / `feishu_reselect` 控制。
 
+## 最近代码改动（工作台可发送）
+- 来源是 `.claude/recent_code_changes.json`，由 Claude Code 的 PostToolUse hook 写入；**只在 Claude Code 会话里更新**，
+  WorkBuddy 改代码不会触发，记录会停在最后一次 Claude Code 编辑。
+- `_recent_code_changes.html` 用 `code_changes_editable` 区分：工作台渲染「勾选框 + 可编辑 textarea」，
+  归档 / 飞书 / GitHub 页只读。
+- 发布走 `chosen_code_changes()`：表单带 `code_changes_present=1` 时看 `include_code_changes` 与 `code_changes_text`，
+  不勾选或文本为空就不附加；缺该标记（旧表单、脚本调用）沿用「全部附加」以兼容测试。
+- 邮件侧 `deliver_progress_email` / `send_progress_email` 有 `recent_changes_text`，用用户改过的措辞而不是结构体。
+- 记录不会因提交而清理，可能显示已提交的旧条目。
+
 ## 静态归档站（GitHub Pages）
 - 导出：`py -3.12 scripts/export_static_site.py`（可加 `--with-attachments`），产物在 `dist_site/`，已被忽略不入库。
 - 模板：`scripts/static_templates/{index,report}.html`，复用 `web/static/style.css` 类名，不依赖 Flask 路由。
