@@ -12,7 +12,7 @@
   <div class="dashboard-layout">
     {% set show_app_nav = active_page != 'sources' %}
     <aside class="dashboard-sidebar">
-      <a class="dashboard-brand" href="{{ url_for('home') }}">
+      <a class="dashboard-brand" href="{{ url_for('archive_page') }}">
         <span class="dashboard-brand-mark" aria-hidden="true">
           <svg viewBox="0 0 24 24"><path d="m13.2 2.8-8 10.1a.7.7 0 0 0 .55 1.13h5.1l-1 7.2 9-11.4a.7.7 0 0 0-.55-1.13h-5.2z"/></svg>
         </span>
@@ -21,15 +21,15 @@
 
       {% if show_app_nav %}
       <nav class="dashboard-nav" aria-label="主导航">
-        <a class="dashboard-nav-link {% if active_page == 'workbench' %}is-active{% endif %}"
-           href="{{ url_for('home') }}" {% if active_page == 'workbench' %}aria-current="page"{% endif %}>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="6" height="6" rx="1"/><rect x="14.5" y="3.5" width="6" height="6" rx="1"/><rect x="3.5" y="14.5" width="6" height="6" rx="1"/><rect x="14.5" y="14.5" width="6" height="6" rx="1"/></svg>
-          工作台
-        </a>
         <a class="dashboard-nav-link {% if active_page == 'archive' %}is-active{% endif %}"
            href="{{ url_for('archive_page') }}" {% if active_page == 'archive' %}aria-current="page"{% endif %}>
           <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5.5" width="16" height="15" rx="2"/><path d="M8 3.5v4M16 3.5v4M4 10h16"/></svg>
           日报归档
+        </a>
+        <a class="dashboard-nav-link {% if active_page == 'workbench' %}is-active{% endif %}"
+           href="{{ url_for('home') }}" {% if active_page == 'workbench' %}aria-current="page"{% endif %}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="6" height="6" rx="1"/><rect x="14.5" y="3.5" width="6" height="6" rx="1"/><rect x="3.5" y="14.5" width="6" height="6" rx="1"/><rect x="14.5" y="14.5" width="6" height="6" rx="1"/></svg>
+          工作台
         </a>
       </nav>
       {% endif %}

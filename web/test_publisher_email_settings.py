@@ -109,7 +109,7 @@ class PublisherEmailSettingTests(unittest.TestCase):
         with self.client.session_transaction() as flask_session:
             flask_session["selected_repository"] = "owner/repo"
 
-        workbench = self.client.get("/")
+        workbench = self.client.get("/workbench")
         archive = self.client.get("/archive")
         github = self.client.get("/github")
 

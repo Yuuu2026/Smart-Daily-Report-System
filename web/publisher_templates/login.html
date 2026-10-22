@@ -16,8 +16,8 @@
     <section class="auth-card" aria-labelledby="auth-title">
       <div class="auth-card-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3.5 20 7v5.3c0 4.3-3.2 7.3-8 9.2-4.8-1.9-8-4.9-8-9.2V7z"/><path d="m8.5 12 2.2 2.2 4.8-4.8"/></svg></div>
       <p class="auth-eyebrow">WELCOME BACK</p>
-      <h1 id="auth-title">登录工作台</h1>
-      <p class="auth-description">登录后记录进展，查看团队每日动态。</p>
+      <h1 id="auth-title">登录智能日报</h1>
+      <p class="auth-description">登录后先进入团队日报归档，再记录自己今天的进展。</p>
       {% with messages = get_flashed_messages(with_categories=true) %}
         {% for category, message in messages %}<p class="flash is-{{ category }} auth-flash" role="status">{{ message }}</p>{% endfor %}
       {% endwith %}

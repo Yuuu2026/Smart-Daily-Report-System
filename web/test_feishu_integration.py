@@ -41,7 +41,7 @@ class FeishuIntegrationTests(unittest.TestCase):
     def tearDown(self):
         self.temp_dir.cleanup()
 
-    def test_login_redirects_to_source_selection(self):
+    def test_login_redirects_to_archive(self):
         login_client = self.app.test_client()
         with login_client.session_transaction() as flask_session:
             flask_session["csrf_token"] = "login-csrf"
@@ -57,7 +57,7 @@ class FeishuIntegrationTests(unittest.TestCase):
         )
 
         self.assertEqual(response.status_code, 302)
-        self.assertEqual(response.headers["Location"], "/sources")
+        self.assertEqual(response.headers["Location"], "/archive")
 
     def test_source_selection_page_offers_github_and_feishu(self):
         response = self.client.get("/sources")
@@ -92,7 +92,7 @@ class FeishuIntegrationTests(unittest.TestCase):
             )
 
             self.assertEqual(response.status_code, 302)
-            self.assertEqual(response.headers["Location"], "/")
+            self.assertEqual(response.headers["Location"], "/workbench")
             store_secret.assert_called_once_with("cli_test_app", "test-app-secret")
             list_chats.assert_called_once_with("cli_test_app", "test-app-secret")
 
@@ -108,7 +108,7 @@ class FeishuIntegrationTests(unittest.TestCase):
         )
 
         self.assertEqual(response.status_code, 302)
-        self.assertEqual(response.headers["Location"], "/")
+        self.assertEqual(response.headers["Location"], "/workbench")
         with database_connection(self.database_path) as connection:
             row = connection.execute(
                 """SELECT feishu_app_id, feishu_chat_id, feishu_chat_name
@@ -118,7 +118,7 @@ class FeishuIntegrationTests(unittest.TestCase):
         self.assertEqual(row["feishu_chat_id"], "oc_test_chat")
         self.assertEqual(row["feishu_chat_name"], "智能日报项目群")
 
-        workbench = self.client.get("/")
+        workbench = self.client.get("/workbench")
         workbench_text = workbench.get_data(as_text=True)
         self.assertEqual(workbench.status_code, 200)
         self.assertIn("当前群聊", workbench_text)
@@ -177,7 +177,7 @@ class FeishuIntegrationTests(unittest.TestCase):
             )
 
             self.assertEqual(response.status_code, 302)
-            self.assertEqual(response.headers["Location"], "/#activity-stream")
+            self.assertEqual(response.headers["Location"], "/workbench#activity-stream")
             collect.assert_called_once_with(
                 "oc_test_chat",
                 app_id="cli_test_app",

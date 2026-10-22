@@ -17,7 +17,7 @@
       <div class="auth-card-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M16 20v-1.6a3.4 3.4 0 0 0-3.4-3.4H6.4A3.4 3.4 0 0 0 3 18.4V20M9.5 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7ZM19 8v6M16 11h6"/></svg></div>
       <p class="auth-eyebrow">JOIN YOUR TEAM</p>
       <h1 id="auth-title">创建成员账号</h1>
-      <p class="auth-description">加入团队，发布工作进展并查看每日归档。</p>
+      <p class="auth-description">加入团队，先看日报归档，再发布自己的工作进展。</p>
       {% with messages = get_flashed_messages(with_categories=true) %}
         {% for category, message in messages %}<p class="flash is-{{ category }} auth-flash" role="status">{{ message }}</p>{% endfor %}
       {% endwith %}

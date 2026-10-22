@@ -315,6 +315,12 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
 
     @app.get("/")
     @login_required
+    def entry():
+        """账号进入系统后的统一落地页：先看团队日报归档。"""
+        return redirect(url_for("archive_page"))
+
+    @app.get("/workbench")
+    @login_required
     def home():
         source_switch = request.args.get("source")
         if source_switch in ("github", "feishu"):
@@ -1184,13 +1190,13 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
                     "DELETE FROM records WHERE category = 'collaborations' AND extra_json LIKE ?",
                     ('%"source_type": "feishu"%',),
                 )
-            return redirect(url_for("select_source"))
+            return redirect(url_for("archive_page"))
         return render_template("login.html")
 
     @app.route("/register", methods=["GET", "POST"])
     def register():
         if "user_id" in session:
-            return redirect(url_for("home"))
+            return redirect(url_for("archive_page"))
         if request.method == "POST":
             if not csrf_valid():
                 flash("页面已过期，请刷新后重试。", "error")
@@ -1254,7 +1260,7 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
             session["selected_feishu_chat_name"] = ""
             csrf_token()
             flash("账号创建成功，已自动登录。", "success")
-            return redirect(url_for("select_source"))
+            return redirect(url_for("archive_page"))
         return render_template("register.html")
 
     @app.post("/logout")
