@@ -80,8 +80,46 @@ from web.publisher_repo import (
 ARCHIVE_PAGE_SIZE = 6
 GITHUB_PAGE_SIZE = 8
 FEISHU_PAGE_SIZE = 8
+RECENT_CODE_CHANGES_PATH = PROJECT_ROOT / ".claude" / "recent_code_changes.json"
 
 CSRF_ERROR = "页面已过期，请刷新后重试。"
+
+
+def recent_code_changes(path=RECENT_CODE_CHANGES_PATH):
+    """读取本机编辑摘要；缺失或损坏时不影响归档页。"""
+    try:
+        changes = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    if not isinstance(changes, list):
+        return []
+    result = []
+    for change in changes[:5]:
+        if not isinstance(change, dict):
+            continue
+        if not all(isinstance(change.get(key), str) for key in ("path", "summary", "kind", "time")):
+            continue
+        if not all(type(change.get(key)) is int for key in ("additions", "deletions")):
+            continue
+        result.append({
+            "path": change["path"][:160],
+            "summary": change["summary"][:60],
+            "kind": change["kind"][:20],
+            "time": change["time"][:35],
+            "additions": min(max(0, change["additions"]), 999999),
+            "deletions": min(max(0, change["deletions"]), 999999),
+        })
+    return result
+
+
+def format_code_changes(changes):
+    """只用经过长度限制的元数据，生成可存入归档的文本。"""
+    return "\n".join(
+        f"{item['summary']} · {item['path']}（{item['kind']}，"
+        f"相对 HEAD 累计 +{item['additions']} / −{item['deletions']}，"
+        f"{item['time'][:16].replace('T', ' ')}）"
+        for item in changes
+    )
 
 
 def csrf_token():
@@ -228,9 +266,11 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
         stream_label=None,
         report_detail="标准",
         attachments=None,
+        recent_changes=None,
     ):
         """给多个收件人分别发送邮件，并逐条记录发送结果。"""
         settings = smtp_settings_from_env(sender_email)
+        changes = recent_code_changes() if recent_changes is None else recent_changes
         subject = f"研一 {session['display_name']} {work_date} 智能日报"
         sent, failed = [], []
         for recipient in recipients:
@@ -250,6 +290,7 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
                     stream_label=stream_label,
                     report_detail=report_detail,
                     attachments=attachments,
+                    recent_changes=changes,
                 )
             except EmailNotificationError as error:
                 error_message = str(error)
@@ -462,6 +503,7 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
             notification_email_2=notification_email_2,
             notification_email_3=notification_email_3,
             email_deliveries=email_deliveries,
+            recent_changes=recent_code_changes(),
             latest_email_delivery=email_deliveries[0] if email_deliveries else None,
             publish_only=publish_only,
             github_needs_setup=github_needs_setup,
@@ -599,6 +641,7 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
             breadcrumb_title="日报归档",
             breadcrumb_subtitle="团队工作记录",
             search_target=url_for("archive_page"),
+            recent_changes=recent_code_changes(),
         )
 
     @app.get("/github")
@@ -717,6 +760,7 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
             breadcrumb_title="GitHub 活动",
             breadcrumb_subtitle="仓库活动流水",
             search_target=url_for("github_activity_page"),
+            recent_changes=recent_code_changes(),
         )
 
     @app.get("/feishu")
@@ -847,6 +891,7 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
             breadcrumb_title="飞书群聊",
             breadcrumb_subtitle="群聊消息流水",
             search_target=url_for("feishu_page"),
+            recent_changes=recent_code_changes(),
         )
 
     @app.post("/feishu/settings")
@@ -1418,16 +1463,19 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
             ("问题与风险", problems),
             ("下一步计划", next_steps),
         )
-        if any(value for _, value in progress_sections):
+        changes = recent_code_changes()
+        changes_text = format_code_changes(changes)
+        if not any((finished, problems, next_steps, changes_text, title and content)):
+            flash("请填写下一步计划，或等待最近代码改动生成后再发布。", "error")
+            return redirect(url_for("home", _anchor="daily-form"))
+        if any(value for _, value in progress_sections) or changes_text:
             title = title or "今日工作进展"
-            content = (
-                f"工作状态：{work_status}\n\n"
-                + "\n\n".join(
-                f"{label}：\n{value}"
-                for label, value in progress_sections
-                if value
-                )
-            )
+            sections = [
+                f"{label}：\n{value}" for label, value in progress_sections if value
+            ]
+            if changes_text:
+                sections.append(f"最近代码改动：\n{changes_text}")
+            content = f"工作状态：{work_status}\n\n" + "\n\n".join(sections)
         source_url = request.form.get("source_url", "").strip()
         work_date = request.form.get("work_date", "")
         try:
@@ -1517,6 +1565,7 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
                 stream_items=stream_items,
                 stream_label=stream_label,
                 report_detail=report_detail,
+                recent_changes=changes,
                 attachments=[
                     str(Path(app.config["UPLOAD_FOLDER"]) / path)
                     for path in attachment_paths

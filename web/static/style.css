@@ -2569,9 +2569,30 @@ body.dashboard-page { background: #edf1fb; }
   box-shadow: 0 4px 10px rgb(91 110 246 / 14%);
 }
 
-/* ============================================================
-   工作台内「飞书群聊接入」引导卡片（feishu_needs_setup）
-   ============================================================ */
+/* 工作台及来源活动页共用代码改动摘要。 */
+.dashboard-content .workbench-code-changes {
+  min-width: 0;
+  border: 1px solid #dce4f1;
+  border-radius: 12px;
+  padding: 17px 18px;
+  background: #f8faff;
+}
+.dashboard-content.github-page > .workbench-code-changes,
+.dashboard-content.feishu-page > .workbench-code-changes { margin-top: 18px; }
+.dashboard-content :is(.workbench-code-changes, .workbench-code-changes *) { box-sizing: border-box; }
+.dashboard-content .workbench-code-changes { min-width: 0; overflow-wrap: anywhere; }
+.dashboard-content .workbench-code-changes-head { display: flex; justify-content: space-between; gap: 12px; }
+.dashboard-content .workbench-code-changes-head h3 { margin: 0; color: #283950; font-size: 15px; }
+.dashboard-content .workbench-code-changes-head p,
+.dashboard-content .workbench-code-changes-empty { margin: 7px 0 0; color: #4f5e76; font-size: 12px; line-height: 1.6; }
+.dashboard-content .workbench-code-changes-head > span { flex: 0 0 auto; color: #415a82; font-size: 11px; }
+.dashboard-content .workbench-code-changes-list { display: grid; gap: 0; margin: 13px 0 0; padding: 0; list-style: none; }
+.dashboard-content .workbench-code-changes-list li { display: grid; min-width: 0; gap: 5px; border-top: 1px solid #dce4f1; padding: 10px 0; }
+.dashboard-content .workbench-code-changes-list strong { color: #293b56; font-size: 12px; }
+.dashboard-content .workbench-code-changes-list code { color: #435875; font-size: 11px; overflow-wrap: anywhere; }
+.dashboard-content .workbench-code-changes-list small { color: #53627a; font-size: 11px; }
+
+/* 工作台内「飞书群聊接入」引导卡片（feishu_needs_setup） */
 .dashboard-page .feishu-setup-banner {
   border-left: 4px solid transparent;
   border-image: linear-gradient(180deg, #5b6ef6, #8b5cf6, #22d3ee) 1 / 0 0 0 4px;

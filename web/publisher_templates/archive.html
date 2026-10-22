@@ -5,14 +5,42 @@
 {% block content %}
   <section class="page-hero archive-page-hero">
     <div>
-      <p class="page-eyebrow">REPORT ARCHIVE</p>
-      <h1>日报归档</h1>
-      <p>集中查看成员日报、GitHub 提交与飞书群聊消息，按日期追溯团队工作记录。</p>
+      <p class="page-eyebrow">TEAM JOURNAL / 日报归档</p>
+      <h1>让团队的每一步都有迹可循。</h1>
+      <p>在一处回看成员日报、GitHub 提交和飞书群聊消息。按日期找到进展，不遗漏重要记录。</p>
     </div>
-    <div class="page-metric">
+    <div class="page-metric" aria-label="当前筛选结果共 {{ item_count }} 条记录">
+      <span>当前范围</span>
       <strong>{{ item_count }}</strong>
-      <span>条归档记录</span>
+      <span>条记录</span>
     </div>
+  </section>
+
+  <section class="recent-changes" aria-labelledby="recent-changes-title">
+    <div class="recent-changes-heading">
+      <div>
+        <p class="section-kicker">项目进展 / 代码修改</p>
+        <h2 id="recent-changes-title">最近代码改动</h2>
+        <p>本机 Claude Code 最近修改的文件摘要；不是 GitHub 提交或日报记录。</p>
+      </div>
+      <span>最近 {{ recent_changes|length }} 条</span>
+    </div>
+    {% if recent_changes %}
+      <ul class="recent-changes-list">
+        {% for change in recent_changes %}
+          <li>
+            <div><strong>{{ change.summary }}</strong><code>{{ change.path }}</code></div>
+            <div class="recent-change-meta">
+              <span>{{ change.kind }}</span>
+              <span>累计差异 +{{ change.additions }} / −{{ change.deletions }}</span>
+              <time datetime="{{ change.time }}">{{ change.time[:16].replace('T', ' ') }}</time>
+            </div>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="recent-changes-empty">暂无由 Claude Code 记录的代码改动。</p>
+    {% endif %}
   </section>
 
   {% with messages = get_flashed_messages(with_categories=true) %}
@@ -23,8 +51,9 @@
 
   <section class="page-filter-bar" aria-label="筛选归档记录">
     <div class="page-filter-copy">
-      <strong>筛选时间范围</strong>
-      <span>可按开始日期和结束日期定位历史日报</span>
+      <span class="filter-kicker">01 / 找到记录</span>
+      <strong>选择时间范围</strong>
+      <span>筛选你想回看的那段工作进展</span>
     </div>
     <form class="page-filter-form" method="get" action="{{ url_for('archive_page') }}">
       <label for="archive-from">开始日期</label>
@@ -48,10 +77,11 @@
   <section class="page-results" aria-labelledby="archive-results-title">
     <div class="page-heading">
       <div>
-        <h2 id="archive-results-title">归档流水</h2>
-        <span>成员日报、GitHub 提交与飞书消息按工作日期倒序排列</span>
+        <p class="section-kicker">02 / 阅读进展</p>
+        <h2 id="archive-results-title">归档记录</h2>
+        <span>按工作日期倒序排列 · 来源与成员一目了然</span>
       </div>
-      <span class="page-range">当前共 {{ item_count }} 条</span>
+      <span class="page-range" aria-label="当前共 {{ item_count }} 条记录">{{ item_count }} 条结果</span>
     </div>
 
     {% if items %}
@@ -80,7 +110,7 @@
               {% else %}
                 <span class="archive-status-badge">{{ item.status }}</span>
                 <span>成员工作日报</span>
-                {% if item.report_detail %}<span class="archive-report-detail">{{ item.report_detail }}</span>{% endif %}
+                {% if item.report_detail and item.report_detail != '标准' %}<span class="archive-report-detail">{{ item.report_detail }}</span>{% endif %}
               {% endif %}
             </div>
             {% if item.source_type == '成员日报' and item.sections %}

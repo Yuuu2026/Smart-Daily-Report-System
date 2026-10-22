@@ -5,19 +5,18 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#ffffff">
   <title>日报归档 · {{ work_date }}</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css', v=11) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css', v=12) }}">
 </head>
 <body class="dashboard-page archive-page">
   <div class="dashboard-layout">
     <aside class="dashboard-sidebar">
-      <a class="dashboard-brand" href="http://127.0.0.1:5001/">
+      <a class="dashboard-brand" href="{{ url_for('archive_page') }}">
         <span class="dashboard-brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m13.2 2.8-8 10.1a.7.7 0 0 0 .55 1.13h5.1l-1 7.2 9-11.4a.7.7 0 0 0-.55-1.13h-5.2z"/></svg></span>
         <span>智能日报</span>
       </a>
       <nav class="dashboard-nav" aria-label="主导航">
-        <a class="dashboard-nav-link" href="http://127.0.0.1:5001/"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="6" height="6" rx="1"/><rect x="14.5" y="3.5" width="6" height="6" rx="1"/><rect x="3.5" y="14.5" width="6" height="6" rx="1"/><rect x="14.5" y="14.5" width="6" height="6" rx="1"/></svg>工作台</a>
         <a class="dashboard-nav-link is-active" href="{{ url_for('archive_page', date=work_date, repository=repository) }}" aria-current="page"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5.5" width="16" height="15" rx="2"/><path d="M8 3.5v4M16 3.5v4M4 10h16"/></svg>日报归档</a>
-        <a class="dashboard-nav-link" href="#archive-results"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 12 4.2 0 2.1-6.5L13 19l2.6-7H21"/></svg>GitHub 活动</a>
+        <a class="dashboard-nav-link" href="http://127.0.0.1:5001/sources"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h6v6H4zM14 11h6v6h-6zM10 10h4M7 13v3h3"/><path d="M4 20h16"/></svg>接入配置</a>
       </nav>
       <div class="dashboard-profile archive-profile"><span class="profile-avatar">日</span><span class="profile-copy"><strong>团队空间</strong><small>本地日报归档</small></span></div>
     </aside>
@@ -25,7 +24,7 @@
     <main class="dashboard-main">
       <header class="dashboard-topbar">
         <div class="dashboard-breadcrumb"><strong>日报归档</strong><span>团队工作记录</span></div>
-        <div class="topbar-actions"><a class="dashboard-primary" href="http://127.0.0.1:5001/"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21 3-7.2 18-3.9-7.1L3 10zM9.9 13.9 21 3"/></svg>发布进展</a></div>
+        <div class="topbar-actions"><a class="dashboard-primary" href="http://127.0.0.1:5001/workbench"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21 3-7.2 18-3.9-7.1L3 10zM9.9 13.9 21 3"/></svg>发布进展</a></div>
       </header>
 
       <div class="dashboard-content archive-dashboard-content">

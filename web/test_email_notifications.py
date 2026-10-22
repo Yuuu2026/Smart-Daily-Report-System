@@ -240,6 +240,54 @@ class SmtpSettingsTests(unittest.TestCase):
         self.assertIn("- [成员发布] 补充证据链接", content)
         self.assertNotIn("来源链接", content)
 
+    def test_progress_email_includes_escaped_code_changes_and_skips_empty(self):
+        settings = email_notifications.SmtpSettings(
+            host="smtp.qq.com", port=465, username="sender@qq.com",
+            password="authorization-code", sender="sender@qq.com", secure="ssl",
+        )
+        changes = [{"summary": "更新 Python 逻辑", "path": "web/<script>alert(1)</script>.py",
+                    "kind": "修改", "additions": 2, "deletions": 1,
+                    "time": "2026-10-22T12:34+08:00"}]
+        with patch.object(email_notifications, "_send_message") as send_message:
+            email_notifications.send_progress_email(
+                settings, "recipient@example.com", "张三", "2026-10-22",
+                "", "", "下一步整理测试", recent_changes=changes,
+            )
+        body = send_message.call_args.args[2].get_content()
+        self.assertIn("最近代码改动", body)
+        self.assertIn("web/&lt;script&gt;alert(1)&lt;/script&gt;.py", body)
+        self.assertNotIn("<script>alert(1)</script>", body)
+        self.assertNotIn("完成事项", body)
+        self.assertNotIn("问题与风险", body)
+        self.assertNotIn("日报粒度", body)
+
+        with patch.object(email_notifications, "_send_message") as send_message:
+            email_notifications.send_progress_email(
+                settings, "recipient@example.com", "张三", "2026-10-22",
+                "", "", "下一步整理测试", recent_changes=[],
+            )
+        self.assertNotIn("最近代码改动", send_message.call_args.args[2].get_content())
+
+    def test_progress_email_with_source_stream_also_includes_code_changes(self):
+        settings = email_notifications.SmtpSettings(
+            host="smtp.qq.com", port=465, username="sender@qq.com",
+            password="authorization-code", sender="sender@qq.com", secure="ssl",
+        )
+        changes = [{"summary": "调整页面模板", "path": "web/dashboard.html",
+                    "kind": "修改", "additions": 3, "deletions": 2,
+                    "time": "2026-10-22T12:34+08:00"}]
+        with patch.object(email_notifications, "_send_message") as send_message:
+            email_notifications.send_progress_email(
+                settings, "recipient@example.com", "张三", "2026-10-22",
+                "", "", "", stream_label="GitHub 提交",
+                stream_items=[{"tag": "GitHub", "member": "张三", "summary": "修复归档"}],
+                recent_changes=changes,
+            )
+        body = send_message.call_args.args[2].get_content()
+        self.assertIn("GitHub 提交", body)
+        self.assertIn("最近代码改动", body)
+        self.assertIn("web/dashboard.html", body)
+
     def test_github_sync_email_uses_structured_daily_report_format(self):
         settings = email_notifications.SmtpSettings(
             host="smtp.qq.com",

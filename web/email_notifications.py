@@ -489,6 +489,7 @@ def send_progress_email(
     stream_label=None,
     report_detail="标准",
     attachments=None,
+    recent_changes=None,
 ):
     """发送一条包含工作进展与数据流水的纯文本邮件。"""
     if settings is None:
@@ -510,11 +511,6 @@ def send_progress_email(
     message["To"] = recipient.strip()
     generated_at = datetime.datetime.now().astimezone().strftime("%Y-%m-%d %H:%M")
     report_detail = report_detail or "标准"
-    detail_label = {
-        "简洁": "简洁",
-        "标准": "标准",
-        "详细": "详细",
-    }.get(report_detail, "标准")
     sections = []
     if report_detail == "简洁":
         concise_lines = [
@@ -554,43 +550,38 @@ def send_progress_email(
                 _email_section("🔁", stream_label or "数据流水", stream_lines, accent="#8b5cf6")
             )
     else:
-        sections.append(
-            _email_section(
-                "✅",
-                "完成事项",
-                [f"- [成员发布] {finished or '（未填写）'}"],
-                accent="#22c55e",
-            )
-        )
-        sections.append(
-            _email_section(
-                "⚠️",
-                "问题与风险",
-                [f"- [成员发布] {problems or '（未填写）'}"],
-                accent="#f59e0b",
-            )
-        )
-        sections.append(
-            _email_section(
-                "🧭",
-                "下一步计划",
-                [f"- [成员发布] {next_steps or '（未填写）'}"],
-                accent="#3d78f5",
-            )
-        )
+        for icon, title, value, accent in (
+            ("✅", "完成事项", finished, "#22c55e"),
+            ("⚠️", "问题与风险", problems, "#f59e0b"),
+            ("🧭", "下一步计划", next_steps, "#3d78f5"),
+        ):
+            if value:
+                sections.append(
+                    _email_section(icon, title, [f"- [成员发布] {value}"], accent=accent)
+                )
         if stream_lines:
             sections.append(
                 _email_section("🔁", stream_label or "数据流水", stream_lines, accent="#8b5cf6")
             )
 
+    if recent_changes:
+        change_lines = [
+            f"- {item['summary']} · {item['path']}（{item['kind']}，"
+            f"相对 HEAD 累计 +{item['additions']} / −{item['deletions']}，"
+            f"{item['time'][:16].replace('T', ' ')}）"
+            for item in recent_changes
+        ]
+        sections.append(
+            _email_section("🗂️", "最近代码改动", change_lines, accent="#426fa6")
+        )
+
     html_body = _email_wrapper(
         f"研一 {display_name} 智能日报",
-        f"{work_date} · {status} · 日报粒度：{detail_label}",
+        f"{work_date} · {status}",
         [
             ("成员", display_name),
             ("日期", work_date),
             ("状态", status),
-            ("粒度", detail_label),
         ],
         sections,
         f"{generated_at} · 数据来源：成员发布",

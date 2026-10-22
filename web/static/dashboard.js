@@ -13,8 +13,8 @@
   var progressForm = document.querySelector('form.progress-card');
   if (progressForm) {
     var draftKey = 'daily-report-draft:' + (document.body.getAttribute('data-draft-key') || 'default');
-    var TEXT_FIELDS = ['finished', 'problems', 'next_steps'];
-    var ALL_FIELDS = ['work_date', 'report_detail'].concat(TEXT_FIELDS, [
+    var TEXT_FIELDS = ['next_steps'];
+    var ALL_FIELDS = ['work_date'].concat(TEXT_FIELDS, [
       'sender_email', 'recipient_email', 'recipient_email_2', 'recipient_email_3'
     ]);
 

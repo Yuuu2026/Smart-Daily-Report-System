@@ -29,6 +29,7 @@ PUBLISHED_SECTION_LABELS = {
     "finished": ("完成事项", "今天完成了什么"),
     "problems": ("问题与风险", "遇到了什么问题"),
     "next_steps": ("下一步计划", "下一步准备做什么"),
+    "code_changes": ("最近代码改动",),
 }
 PUBLISHED_SECTION_HEADER_RE = re.compile(
     r"^\s*("

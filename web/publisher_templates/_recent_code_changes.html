@@ -1,0 +1,22 @@
+<section class="workbench-code-changes" aria-labelledby="recent-code-changes-title">
+  <div class="workbench-code-changes-head">
+    <div>
+      <h3 id="recent-code-changes-title">最近代码改动</h3>
+      <p>本机 Claude Code 的文件改动摘要；保存日报和发送进展邮件时会附上，不包含完整代码。</p>
+    </div>
+    <span>最近 {{ recent_changes|length }} 条</span>
+  </div>
+  {% if recent_changes %}
+    <ul class="workbench-code-changes-list">
+      {% for change in recent_changes %}
+        <li>
+          <strong>{{ change.summary }}</strong>
+          <code>{{ change.path }}</code>
+          <small>{{ change.kind }} · 相对 HEAD 累计 +{{ change.additions }} / −{{ change.deletions }} · {{ change.time[:16].replace('T', ' ') }}</small>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="workbench-code-changes-empty">暂无由 Claude Code 记录的代码改动。</p>
+  {% endif %}
+</section>

@@ -129,6 +129,7 @@ def published_item(row):
         ("finished", "完成事项"),
         ("problems", "问题与风险"),
         ("next_steps", "下一步计划"),
+        ("code_changes", "最近代码改动"),
     )
     item = _base_item(row, "publish", "created_at", row["member"], "成员日报")
     item.update(

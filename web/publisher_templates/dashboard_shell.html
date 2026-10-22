@@ -5,10 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#ffffff">
   <title>{% block title %}{{ page_title }} · 智能日报{% endblock %}</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css', v=11) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css', v=12) }}">
+  {% if active_page in ('archive', 'sources') %}
+    <link rel="stylesheet" href="{{ url_for('static', filename='primary-pages.css', v=2) }}">
+  {% endif %}
   {% block head %}{% endblock %}
 </head>
-<body class="dashboard-page"{% if current_user %} data-draft-key="{{ current_user.id }}"{% endif %}>
+<body class="dashboard-page{% if active_page in ('archive', 'sources') %} primary-page{% endif %}"{% if current_user %} data-draft-key="{{ current_user.id }}"{% endif %}>
   <div class="dashboard-layout">
     <aside class="dashboard-sidebar">
       <a class="dashboard-brand" href="{{ url_for('archive_page') }}">
@@ -129,7 +132,7 @@
       </div>
     </main>
   </div>
-  <script src="{{ url_for('static', filename='dashboard.js', v=10) }}" defer></script>
+  <script src="{{ url_for('static', filename='dashboard.js', v=11) }}" defer></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>

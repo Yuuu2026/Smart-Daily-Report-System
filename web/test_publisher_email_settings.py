@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from web import email_notifications
 from web.app import database_connection, initialize_database
-from web.publisher_app import create_publisher_app
+from web.publisher_app import create_publisher_app, format_code_changes
 from web.publisher_auth import hash_password
 
 
@@ -114,7 +114,11 @@ class PublisherEmailSettingTests(unittest.TestCase):
         github = self.client.get("/github")
 
         self.assertEqual(workbench.status_code, 200)
-        self.assertIn("日报颗粒度", workbench.get_data(as_text=True))
+        self.assertNotIn("日报颗粒度", workbench.get_data(as_text=True))
+        self.assertNotIn("今天完成了什么？", workbench.get_data(as_text=True))
+        self.assertNotIn("遇到了什么问题？", workbench.get_data(as_text=True))
+        self.assertIn("下一步准备做什么？", workbench.get_data(as_text=True))
+        self.assertIn("最近代码改动", workbench.get_data(as_text=True))
         self.assertIn("添加照片", workbench.get_data(as_text=True))
         self.assertIn("目的邮箱 2", workbench.get_data(as_text=True))
         self.assertEqual(archive.status_code, 200)
@@ -289,6 +293,115 @@ class PublisherEmailSettingTests(unittest.TestCase):
         served = self.client.get(f"/uploads/{attachments[0]}")
         self.assertEqual(served.status_code, 200)
         served.close()
+
+    def test_workbench_change_summary_renders_and_escapes_code_path(self):
+        changes = [{"summary": "更新 Python 逻辑", "path": "web/<script>bad</script>.py",
+                    "kind": "修改", "additions": 2, "deletions": 1,
+                    "time": "2026-10-22T09:00+08:00"}]
+        with self.client.session_transaction() as flask_session:
+            flask_session["selected_source"] = "github"
+        with patch("web.publisher_app.recent_code_changes", return_value=changes):
+            page = self.client.get("/workbench").get_data(as_text=True)
+        self.assertIn("更新 Python 逻辑", page)
+        self.assertIn("web/&lt;script&gt;bad&lt;/script&gt;.py", page)
+        self.assertNotIn("<script>bad</script>", page)
+        self.assertNotIn('name="finished"', page)
+        self.assertNotIn('name="problems"', page)
+        self.assertNotIn('name="report_detail"', page)
+
+    def test_next_steps_and_code_summary_are_saved_to_archive(self):
+        today = datetime.date.today().isoformat()
+        changes = [{"summary": "调整日报归档页面", "path": "web/archive.html",
+                    "kind": "修改", "additions": 3, "deletions": 1,
+                    "time": "2026-10-22T09:00+08:00"}]
+        with patch("web.publisher_app.recent_code_changes", return_value=changes):
+            response = self.client.post("/publish", data={
+                "csrf_token": "test-csrf", "work_date": today,
+                "next_steps": "补充回归检查", "publish_action": "save_only",
+            })
+            archive = self.client.get("/archive").get_data(as_text=True)
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("最近代码改动", archive)
+        self.assertIn("web/archive.html", archive)
+        self.assertIn("补充回归检查", archive)
+        with database_connection(self.database_path) as connection:
+            content = connection.execute("SELECT content FROM published_items").fetchone()[0]
+        self.assertIn("下一步计划", content)
+        self.assertIn(format_code_changes(changes), content)
+
+    def test_code_summary_alone_can_be_saved_and_sent(self):
+        today = datetime.date.today().isoformat()
+        changes = [{"summary": "更新 Python 逻辑", "path": "web/app.py",
+                    "kind": "修改", "additions": 7, "deletions": 0,
+                    "time": "2026-10-22T09:00+08:00"}]
+        with patch("web.publisher_app.recent_code_changes", return_value=changes), \
+             patch("web.publisher_app.smtp_settings_from_env", return_value="smtp"), \
+             patch("web.publisher_app.write_local_smtp_config"), \
+             patch("web.publisher_app.send_progress_email") as send_email:
+            response = self.client.post("/publish", data={
+                "csrf_token": "test-csrf", "work_date": today,
+                "next_steps": "", "sender_email": "sender@example.com",
+                "recipient_email": "recipient@example.com", "publish_action": "save_send",
+            })
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(send_email.call_args.kwargs["recent_changes"], changes)
+        with database_connection(self.database_path) as connection:
+            content = connection.execute("SELECT content FROM published_items").fetchone()[0]
+        self.assertIn("web/app.py", content)
+
+    def test_next_steps_alone_can_be_saved_without_code_changes(self):
+        with patch("web.publisher_app.recent_code_changes", return_value=[]):
+            response = self.client.post("/publish", data={
+                "csrf_token": "test-csrf", "work_date": datetime.date.today().isoformat(),
+                "next_steps": "明天整理测试", "publish_action": "save_only",
+            })
+        self.assertEqual(response.status_code, 302)
+        with database_connection(self.database_path) as connection:
+            content = connection.execute("SELECT content FROM published_items").fetchone()[0]
+        self.assertIn("明天整理测试", content)
+        self.assertNotIn("最近代码改动", content)
+
+    def test_source_send_routes_forward_code_summary(self):
+        changes = [{"summary": "调整页面模板", "path": "web/dashboard.html",
+                    "kind": "修改", "additions": 3, "deletions": 2,
+                    "time": "2026-10-22T09:00+08:00"}]
+        today = datetime.date.today().isoformat()
+        for source in ("github", "feishu"):
+            with self.subTest(source=source):
+                with self.client.session_transaction() as flask_session:
+                    flask_session["selected_source"] = source
+                    flask_session["progress_draft"] = {"work_date": today}
+                    if source == "github":
+                        flask_session["selected_repository"] = "owner/repo"
+                    else:
+                        flask_session["selected_feishu_chat_id"] = "oc_test"
+                        flask_session["selected_feishu_chat_name"] = "测试群"
+                with database_connection(self.database_path) as connection:
+                    connection.execute(
+                        "UPDATE publisher_users SET sender_email = ?, notification_email = ?, feishu_chat_id = ? WHERE id = 1",
+                        ("sender@example.com", "recipient@example.com", "oc_test"),
+                    )
+                endpoint = "/github/send" if source == "github" else "/feishu/send"
+                with patch("web.publisher_app.stream_for_publish", return_value=("数据流水", [{"tag": source}])), \
+                     patch("web.publisher_app.smtp_settings_from_env", return_value="smtp"), \
+                     patch("web.publisher_app.recent_code_changes", return_value=changes), \
+                     patch("web.publisher_app.send_progress_email") as send_email:
+                    response = self.client.post(endpoint, data={"csrf_token": "test-csrf"})
+                self.assertEqual(response.status_code, 302)
+                self.assertEqual(send_email.call_args.kwargs["recent_changes"], changes)
+
+    def test_empty_summary_and_next_steps_do_not_publish(self):
+        with patch("web.publisher_app.recent_code_changes", return_value=[]), \
+             patch("web.publisher_app.send_progress_email") as send_email:
+            response = self.client.post("/publish", data={
+                "csrf_token": "test-csrf", "work_date": datetime.date.today().isoformat(),
+                "next_steps": "", "publish_action": "save_send",
+            })
+        self.assertEqual(response.status_code, 302)
+        send_email.assert_not_called()
+        with database_connection(self.database_path) as connection:
+            count = connection.execute("SELECT COUNT(*) FROM published_items").fetchone()[0]
+        self.assertEqual(count, 0)
 
 
 if __name__ == "__main__":

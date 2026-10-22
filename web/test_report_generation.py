@@ -24,6 +24,20 @@ class ReportGenerationTests(unittest.TestCase):
         self.assertEqual(sections["problems"], "SMTP 授权码保存失败")
         self.assertEqual(sections["next_steps"], "验证正式发送链路")
 
+    def test_parse_progress_sections_supports_code_summary(self):
+        sections = parse_progress_sections(
+            "工作状态：已完成\n\n"
+            "下一步计划：\n整理测试\n\n"
+            "最近代码改动：\n更新 Python 逻辑 · web/app.py\n"
+            "调整页面模板 · web/dashboard.html"
+        )
+        self.assertEqual(sections["next_steps"], "整理测试")
+        self.assertEqual(
+            sections["code_changes"],
+            "更新 Python 逻辑 · web/app.py\n调整页面模板 · web/dashboard.html",
+        )
+        self.assertEqual(sections["finished"], "")
+
     def test_compact_progress_text_truncates_long_details(self):
         long_text = "完成" + "继续补充很多实现细节" * 10
         compact = compact_progress_text(long_text)

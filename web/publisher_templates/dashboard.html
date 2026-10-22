@@ -156,31 +156,14 @@
         <span>{{ today_label }}</span>
         <input id="work-date" type="date" name="work_date" value="{{ today }}" required>
       </label>
-      <label class="progress-detail" for="report-detail">
-        <span>日报颗粒度</span>
-        <select id="report-detail" name="report_detail">
-          <option value="简洁">简洁</option>
-          <option value="标准" selected>标准</option>
-          <option value="详细">详细</option>
-        </select>
-      </label>
+      {% include "_recent_code_changes.html" %}
       <label class="progress-question">
-        <span class="question-title"><i>1</i>今天完成了什么？</span>
-        <textarea name="finished" rows="2"
-                  placeholder="例如：完成日报归档页重构，支持日期筛选与分页，页面测试通过"></textarea>
-      </label>
-      <label class="progress-question">
-        <span class="question-title"><i>2</i>遇到了什么问题？</span>
-        <textarea name="problems" rows="2"
-                  placeholder="例如：Windows 凭据管理器写入失败，已改用本地加密存储"></textarea>
-      </label>
-      <label class="progress-question">
-        <span class="question-title"><i>3</i>下一步准备做什么？</span>
+        <span class="question-title"><i>1</i>下一步准备做什么？</span>
         <textarea name="next_steps" rows="2"
-                  placeholder="例如：验证 QQ 邮箱正式发送流程，产出一次成功发送记录"></textarea>
+                  placeholder="例如：验证邮件发送流程，补充页面级回归测试"></textarea>
       </label>
       <label class="progress-photos">
-        <span class="question-title"><i>4</i>添加照片</span>
+        <span class="question-title"><i>2</i>添加照片</span>
         <input id="attachments" type="file" name="attachments" accept="image/*" multiple>
         <small>最多 6 张，支持 JPG、PNG、GIF、WebP；会随日报发送并保存到归档</small>
       </label>
@@ -240,7 +223,7 @@
         </section>
       {% endif %}
       <div class="progress-actions">
-        <span>至少填写一项即可发布</span>
+        <span>填写下一步计划或有最近代码改动后即可发布</span>
         <div>
           <button class="button-text" type="submit" name="publish_action" value="save_only">
             仅保存到日报归档
