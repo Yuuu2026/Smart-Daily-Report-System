@@ -63,6 +63,17 @@
 - 邮件侧 `deliver_progress_email` / `send_progress_email` 有 `recent_changes_text`，用用户改过的措辞而不是结构体。
 - 记录不会因提交而清理，可能显示已提交的旧条目。
 
+## 日报表单字段与工作量柱状图
+- 工作台正文只有两问：「解决了什么问题？」(`solved`) 与「下一步准备做什么？」(`next_steps`)；`finished` / `problems`
+  字段仍保留在后台解析（历史数据兼容），表单不再渲染。
+- 段落标签集中在 `report_core.PUBLISHED_SECTION_LABELS`，新增字段必须同步三处：
+  `PUBLISHED_SECTION_LABELS`、`publisher_repo.published_item()` 的 labels、`report_quality.SECTION_LABELS`。
+- 工作量口径：`publisher_repo.workload_series()` = 当天 `published_items + records(tasks) + records(collaborations)
+  + github_commits + feishu_messages` 的条数，默认近 7 天；工作台与邮件共用同一个函数，不要各写一套统计。
+- 邮件里的柱状图只能用表格拼（`td height` + `bgcolor`），邮件客户端不执行 JS；`_email_bar_chart` / `_email_stat_cards`
+  是邮件专用渲染函数，改样式时保持内联样式、不要引入 `<style>` 或 class。
+- 邮件 `ul` 用 `list-style:none`：正文行首本身带「- 」，否则会出现双项目符号。
+
 ## 静态归档站（GitHub Pages）
 - 导出：`py -3.12 scripts/export_static_site.py`（可加 `--with-attachments`），产物在 `dist_site/`，已被忽略不入库。
 - 模板：`scripts/static_templates/{index,report}.html`，复用 `web/static/style.css` 类名，不依赖 Flask 路由。
