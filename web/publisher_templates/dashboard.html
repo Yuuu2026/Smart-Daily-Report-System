@@ -206,8 +206,17 @@
         <textarea name="next_steps" rows="2"
                   placeholder="例如：验证邮件发送流程，补充页面级回归测试"></textarea>
       </label>
+      <label class="progress-hours" for="work-hours">
+        <span class="question-title"><i>3</i>今天投入了多久？<em>可选</em></span>
+        <span class="hours-field">
+          <input id="work-hours" type="number" name="hours" min="0.5" max="24" step="0.5"
+                 inputmode="decimal" placeholder="6.5">
+          <span class="hours-unit">小时</span>
+        </span>
+        <small>留空则邮件概览里不显示这一格</small>
+      </label>
       <label class="progress-photos">
-        <span class="question-title"><i>3</i>添加照片</span>
+        <span class="question-title"><i>4</i>添加照片</span>
         <input id="attachments" type="file" name="attachments" accept="image/*" multiple>
         <small>最多 6 张，支持 JPG、PNG、GIF、WebP；会随日报发送并保存到归档</small>
       </label>

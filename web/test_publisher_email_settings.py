@@ -501,6 +501,51 @@ class PublisherEmailSettingTests(unittest.TestCase):
             })
         self.assertEqual(send_email.call_args.kwargs["solved"], "修好了归档页的时间显示")
 
+    def test_hours_are_saved_into_report_content(self):
+        with patch("web.publisher_app.recent_code_changes", return_value=[]):
+            self.client.post("/publish", data={
+                "csrf_token": "test-csrf",
+                "work_date": datetime.date.today().isoformat(),
+                "solved": "修好了归档页的时间显示",
+                "hours": "6.5",
+                "publish_action": "save_only",
+            })
+        with database_connection(self.database_path) as connection:
+            content = connection.execute(
+                "SELECT content FROM published_items"
+            ).fetchone()[0]
+        self.assertIn("投入工时：6.5 小时", content)
+
+    def test_invalid_hours_block_publish(self):
+        with patch("web.publisher_app.recent_code_changes", return_value=[]):
+            self.client.post("/publish", data={
+                "csrf_token": "test-csrf",
+                "work_date": datetime.date.today().isoformat(),
+                "solved": "修好了归档页的时间显示",
+                "hours": "30",
+                "publish_action": "save_only",
+            })
+        with database_connection(self.database_path) as connection:
+            count = connection.execute(
+                "SELECT COUNT(*) FROM published_items"
+            ).fetchone()[0]
+        self.assertEqual(count, 0)
+
+    def test_hours_are_passed_to_progress_email(self):
+        with patch("web.publisher_app.recent_code_changes", return_value=[]), \
+             patch("web.publisher_app.smtp_settings_from_env", return_value="smtp"), \
+             patch("web.publisher_app.send_progress_email") as send_email:
+            self.client.post("/publish", data={
+                "csrf_token": "test-csrf",
+                "work_date": datetime.date.today().isoformat(),
+                "sender_email": "3247026746@qq.com",
+                "recipient_email": "3247026746@qq.com",
+                "solved": "修好了归档页的时间显示",
+                "hours": "4",
+                "publish_action": "save_send",
+            })
+        self.assertEqual(send_email.call_args.kwargs["hours"], "4")
+
     def test_workload_series_counts_archived_items_per_day(self):
         today = datetime.date.today()
         now = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")

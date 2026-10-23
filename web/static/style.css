@@ -2882,3 +2882,48 @@ body.dashboard-page { background: #edf1fb; }
     gap: 16px;
   }
 }
+
+/* 投入工时：与其它问题同一视觉节奏，但输入框更窄 */
+.progress-card .progress-hours {
+  display: grid;
+  gap: 7px;
+  color: #777d89;
+  font-size: 11px;
+  font-weight: 500;
+}
+.progress-card .progress-hours .question-title em {
+  color: #a1a5af;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 500;
+}
+.progress-card .progress-hours .hours-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.progress-card .progress-hours input {
+  width: 112px;
+  border: 1px solid #eceef2;
+  border-radius: 10px;
+  padding: 9px 12px;
+  background: #fcfcfd;
+  color: #373b45;
+  font-size: 11px;
+}
+.progress-card .progress-hours input:focus {
+  border-color: #aeb8ff;
+  background: #fff;
+  box-shadow: 0 0 0 3px rgb(82 103 245 / 9%);
+  outline: none;
+}
+.progress-card .progress-hours .hours-unit {
+  color: #8a90a0;
+  font-size: 11px;
+  font-weight: 500;
+}
+.progress-card .progress-hours small {
+  color: #a1a5af;
+  font-size: 10px;
+  font-weight: 400;
+}

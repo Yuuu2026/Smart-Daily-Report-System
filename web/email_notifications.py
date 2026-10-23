@@ -14,6 +14,11 @@ from email.utils import formataddr, parseaddr
 
 from report_core import compact_progress_text
 
+try:  # 兼容两种导入方式：包内相对导入与 web 目录直接运行
+    from daily_brief import build_brief
+except ImportError:  # pragma: no cover - 仅在特殊启动方式下触发
+    from .daily_brief import build_brief
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 LOCAL_SMTP_CONFIG_PATH = PROJECT_ROOT / ".smtp.local.json"
@@ -379,6 +384,153 @@ def _email_section(icon, title, lines, accent="#3d78f5"):
     )
 
 
+def _email_block(title, meta, body_html, accent="#3d78f5", top_rule=True):
+    """一个带细线分隔的区块标题 + 内容，信息密度比卡片高。
+
+    用两列表格实现左右对齐，邮件客户端对 float 的支持并不可靠。
+    """
+    rule = "border-top:1px solid #eef1f8;" if top_rule else ""
+    return (
+        f'<table width="100%" cellpadding="0" cellspacing="0" role="presentation" '
+        f'style="margin:14px 0 0;{rule}">'
+        '<tr><td style="padding:13px 0 2px;">'
+        '<table width="100%" cellpadding="0" cellspacing="0" role="presentation"><tr>'
+        '<td valign="middle" style="font-size:13px;font-weight:700;color:#26314d;'
+        'line-height:1.6;">'
+        f'<span style="color:{accent};">■</span>&nbsp;{_html_escape(title)}</td>'
+        '<td valign="middle" align="right" style="font-size:11px;color:#9aa3b8;'
+        f'line-height:1.6;">{_html_escape(meta)}</td>'
+        "</tr></table>"
+        f"{body_html}"
+        "</td></tr></table>"
+    )
+
+
+def _email_kpi_grid(cells):
+    """概览数字网格；cells 为 [(标签, 数值, 色值)]，按 3 列排。"""
+    cells = [cell for cell in cells or [] if cell][:6]
+    if not cells:
+        return ""
+    rows_html = ""
+    for start in range(0, len(cells), 3):
+        row = cells[start:start + 3]
+        tds = ""
+        for index, (label, value, tone) in enumerate(row):
+            left = "" if index == 0 else "border-left:1px solid #e7ecf8;"
+            tds += (
+                f'<td width="{round(100 / 3)}%" valign="top" '
+                f'style="padding:11px 12px;{left}">'
+                '<div style="font-size:11px;color:#8a94ab;line-height:1.5;">'
+                f"{_html_escape(label)}</div>"
+                '<div style="font-size:20px;font-weight:800;line-height:1.35;'
+                f'margin-top:2px;color:{tone};">{_html_escape(value)}</div>'
+                "</td>"
+            )
+        rows_html += f"<tr>{tds}</tr>"
+    return (
+        '<table width="100%" cellpadding="0" cellspacing="0" role="presentation" '
+        'style="margin-top:9px;background-color:#f8faff;border:1px solid #eef2fb;'
+        f'border-radius:12px;">{rows_html}</table>'
+    )
+
+
+def _email_tags(tags):
+    """标签胶囊行。"""
+    tags = [tag for tag in tags or [] if tag]
+    if not tags:
+        return ""
+    chips = "".join(
+        '<span style="display:inline-block;margin:0 6px 6px 0;padding:3px 10px;'
+        "border-radius:999px;background-color:#eef3ff;color:#3d78f5;font-size:11px;"
+        f'line-height:1.7;">{_html_escape(tag)}</span>'
+        for tag in tags
+    )
+    return f'<div style="margin-top:9px;">{chips}</div>'
+
+
+def _email_checklist(items, marker="✓", tone="#22c55e"):
+    """勾选 / 待办清单。"""
+    items = [item for item in items or [] if item]
+    if not items:
+        return ""
+    rows = ""
+    for item in items:
+        rows += (
+            "<tr>"
+            f'<td width="22" valign="top" style="padding:2px 0;font-size:13px;'
+            f'color:{tone};line-height:1.85;">{_html_escape(marker)}</td>'
+            '<td valign="top" style="padding:2px 0;font-size:13px;color:#46516a;'
+            f'line-height:1.85;">{_html_escape(item)}</td>'
+            "</tr>"
+        )
+    return (
+        '<table width="100%" cellpadding="0" cellspacing="0" role="presentation" '
+        f'style="margin-top:7px;">{rows}</table>'
+    )
+
+
+def _email_bars(rows):
+    """占比条形图：外层灰轨道 + 内层按百分比撑开的色块。"""
+    rows = [row for row in rows or [] if row.get("label")]
+    if not rows:
+        return ""
+    html_rows = ""
+    for row in rows:
+        percent = max(2, min(100, int(round(float(row.get("percent") or 0)))))
+        if percent >= 50:
+            fill = "#3d78f5"
+        elif percent >= 25:
+            fill = "#7d99f8"
+        else:
+            fill = "#b9c9f9"
+        html_rows += (
+            '<tr><td style="padding:5px 0;">'
+            '<table width="100%" cellpadding="0" cellspacing="0" role="presentation"><tr>'
+            '<td width="92" style="font-size:12px;color:#46516a;line-height:1.7;">'
+            f'{_html_escape(row.get("label", ""))}</td>'
+            '<td style="padding:0 8px 0 0;">'
+            '<table width="100%" cellpadding="0" cellspacing="0" role="presentation" '
+            'style="background-color:#eef1f8;border-radius:4px;">'
+            f'<tr><td width="{percent}%" style="height:7px;font-size:0;line-height:0;'
+            f'background-color:{fill};border-radius:4px;">&nbsp;</td>'
+            f'<td width="{100 - percent}%" style="height:7px;font-size:0;'
+            'line-height:0;">&nbsp;</td></tr></table>'
+            "</td>"
+            '<td width="42" align="right" style="font-size:12px;font-weight:700;'
+            f'color:#34405a;">{percent}%</td>'
+            "</tr></table></td></tr>"
+        )
+    return (
+        '<table width="100%" cellpadding="0" cellspacing="0" role="presentation" '
+        f'style="margin-top:8px;">{html_rows}</table>'
+    )
+
+
+def _email_insight(state, advice, tone="steady"):
+    """状态 + 建议的一行提示条。"""
+    if not state and not advice:
+        return ""
+    palette = {
+        "good": ("#22c55e", "#f3fbf5"),
+        "steady": ("#3d78f5", "#f5f8ff"),
+        "tight": ("#f59e0b", "#fffaf1"),
+        "low": ("#8a94ab", "#f8faff"),
+    }
+    accent, background = palette.get(tone, palette["steady"])
+    return (
+        '<table width="100%" cellpadding="0" cellspacing="0" role="presentation" '
+        'style="margin-top:8px;background-color:' + background + ";border:1px solid "
+        '#eef2fb;border-radius:10px;">'
+        '<tr><td width="96" valign="middle" style="padding:10px 0 10px 13px;">'
+        '<span style="display:inline-block;padding:2px 9px;border-radius:999px;'
+        f'background-color:{accent};color:#ffffff;font-size:11px;font-weight:700;'
+        f'line-height:1.7;">{_html_escape(state)}</span></td>'
+        '<td valign="middle" style="padding:10px 13px 10px 4px;font-size:12px;'
+        f'color:#46516a;line-height:1.75;">{_html_escape(advice)}</td>'
+        "</tr></table>"
+    )
+
+
 def _email_stat_cards(cards):
     """一行等宽数据卡片；cards 为 [(标签, 数值, 说明, 色值)]。"""
     cards = [card for card in cards or []][:4]
@@ -560,6 +712,127 @@ def _email_wrapper(
 """
 
 
+def _brief_sections(
+    brief,
+    status,
+    solved,
+    finished,
+    stream_lines,
+    stream_label,
+    change_lines,
+    detail="标准",
+):
+    """按「概览 → 总结 → 完成 → 风险 → 改动分布 → 明日计划 → 洞察 → 代码」组装正文。"""
+    sections = []
+    overview = brief["overview"]
+
+    cells = [
+        ("今日任务", f'{overview["tasks"]} 项', "#3d78f5"),
+        ("已完成", f'{overview["done"]} 项', "#22c55e"),
+        ("进行中", f'{overview["doing"]} 项', "#f59e0b"),
+    ]
+    if overview["additions"] or overview["deletions"]:
+        cells.append(("新增代码", f'+{overview["additions"]}', "#6366f1"))
+        cells.append(("删除代码", f'−{overview["deletions"]}', "#8b5cf6"))
+    if overview["hours_label"]:
+        cells.append(("投入工时", overview["hours_label"], "#0d9488"))
+    elif overview["additions"] or overview["deletions"]:
+        cells.append(("净增行数", f'{overview["net"]:+d} 行', "#0d9488"))
+    overview_meta = status
+    if overview["tasks"]:
+        overview_meta = f'完成率 {round(overview["done"] * 100 / overview["tasks"])}%'
+    sections.append(
+        _email_block("今日概览", overview_meta, _email_kpi_grid(cells), top_rule=False)
+    )
+
+    summary_body = (
+        '<div style="margin-top:8px;font-size:13px;color:#46516a;line-height:1.85;">'
+        f'{_html_escape(brief["summary"] or "本次日报未填写正文。")}</div>'
+        + _email_tags(brief["tags"])
+    )
+    sections.append(_email_block("今日总结", "系统自动汇总", summary_body))
+
+    source_labels = []
+    if (solved or "").strip():
+        source_labels.append("解决的问题")
+    if (finished or "").strip():
+        source_labels.append("完成事项")
+    done_items = list(brief["done_items"])
+    if not done_items and detail == "详细":
+        done_items = ["（未填写）"]
+    if done_items:
+        sections.append(
+            _email_block(
+                "今日完成",
+                "来源：" + "、".join(source_labels)
+                if source_labels
+                else f"{len(done_items)} 项",
+                _email_checklist(done_items, "✓", "#22c55e"),
+            )
+        )
+
+    problem_items = list(brief["problem_items"])
+    if not problem_items and detail == "详细":
+        problem_items = ["（未填写）"]
+    if problem_items:
+        sections.append(
+            _email_block(
+                "问题与风险",
+                f"{len(brief['problem_items'])} 项待跟进"
+                if brief["problem_items"]
+                else "本次未记录",
+                _email_checklist(problem_items, "⚠", "#f59e0b"),
+            )
+        )
+
+    if brief["mix"]:
+        sections.append(
+            _email_block("改动分布", brief["mix_caption"], _email_bars(brief["mix"]))
+        )
+
+    plan_items = list(brief["plan_items"])
+    if not plan_items and detail == "详细":
+        plan_items = ["（未填写）"]
+    if plan_items:
+        sections.append(
+            _email_block(
+                "明日计划",
+                f"{len(brief['plan_items'])} 项" if brief["plan_items"] else "待补充",
+                _email_checklist(plan_items, "□", "#8a94ab"),
+            )
+        )
+
+    insight = brief["insight"]
+    if insight["state"] and insight["advice"]:
+        sections.append(
+            _email_block(
+                "工作洞察",
+                "",
+                _email_insight(insight["state"], insight["advice"], insight["tone"]),
+            )
+        )
+
+    if change_lines:
+        totals = brief["change_total"]
+        sections.append(
+            _email_block(
+                "最近代码改动",
+                f'+{totals["additions"]} / −{totals["deletions"]}',
+                _email_checklist(change_lines, "·", "#426fa6"),
+            )
+        )
+
+    if stream_lines:
+        sections.append(
+            _email_block(
+                stream_label or "数据流水",
+                f"{len(stream_lines)} 条",
+                _email_checklist(stream_lines, "·", "#8b5cf6"),
+            )
+        )
+    return sections
+
+
 def send_test_email(settings, recipient):
     """发送一封 SMTP 配置测试邮件。"""
     if settings is None:
@@ -629,6 +902,7 @@ def send_progress_email(
     recent_changes_text=None,
     solved="",
     workload=None,
+    hours=None,
 ):
     """发送一条包含工作进展与数据流水的 HTML 邮件。"""
     if settings is None:
@@ -650,7 +924,30 @@ def send_progress_email(
     message["To"] = recipient.strip()
     generated_at = datetime.datetime.now().astimezone().strftime("%Y-%m-%d %H:%M")
     report_detail = report_detail or "标准"
-    sections = []
+    brief = build_brief(
+        solved=solved,
+        finished=finished,
+        problems=problems,
+        next_steps=next_steps,
+        recent_changes=recent_changes,
+        workload=workload,
+        hours=hours,
+    )
+    change_lines = []
+    if recent_changes_text:
+        change_lines = [
+            line.strip().lstrip("-").strip()
+            for line in recent_changes_text.splitlines()
+            if line.strip()
+        ]
+    elif recent_changes:
+        change_lines = [
+            f"{item['summary']} · {item['path']}（{item['kind']}，"
+            f"+{item['additions']} / −{item['deletions']}，"
+            f"{item['time'][:16].replace('T', ' ')}）"
+            for item in recent_changes
+        ]
+
     if report_detail == "简洁":
         concise_lines = [
             f"{label}：{part.strip()}"
@@ -662,94 +959,45 @@ def send_progress_email(
             )
             if part and part.strip()
         ]
-        progress_text = "；".join(concise_lines) or "（未填写）"
-        sections.append(
-            _email_section("🟦", "今日进展", [progress_text], accent="#38bdf8")
-        )
+        sections = [
+            _email_block(
+                "今日进展",
+                work_date,
+                _email_checklist(
+                    ["；".join(concise_lines) or "（未填写）"], "·", "#38bdf8"
+                ),
+                top_rule=False,
+            )
+        ]
+        if change_lines:
+            totals = brief["change_total"]
+            sections.append(
+                _email_block(
+                    "最近代码改动",
+                    f'+{totals["additions"]} / −{totals["deletions"]}',
+                    _email_checklist(change_lines, "·", "#426fa6"),
+                )
+            )
         if stream_lines:
             sections.append(
-                _email_section("🔁", stream_label or "数据流水", stream_lines, accent="#8b5cf6")
-            )
-    elif report_detail == "详细":
-        solved_text = solved or "（未填写）"
-        finished_text = finished or "（未填写）"
-        problems_text = problems or "（未填写）"
-        next_text = next_steps or "（未填写）"
-        sections.append(
-            _email_section(
-                "🧮",
-                "系统自动汇总",
-                [
-                    f"解决 {1 if solved.strip() else 0} 项问题，"
-                    f"完成 {1 if finished.strip() else 0} 项主要进展，"
-                    f"记录 {1 if problems.strip() else 0} 项风险，"
-                    f"规划 {1 if next_steps.strip() else 0} 项后续任务。"
-                ],
-                accent="#38bdf8",
-            )
-        )
-        sections.append(_email_section("🎯", "解决的问题", [solved_text], accent="#14b8a6"))
-        sections.append(_email_section("✅", "完成事项", [finished_text], accent="#22c55e"))
-        sections.append(_email_section("⚠️", "问题与风险", [problems_text], accent="#f59e0b"))
-        sections.append(_email_section("🧭", "下一步计划", [next_text], accent="#3d78f5"))
-        if stream_lines:
-            sections.append(
-                _email_section("🔁", stream_label or "数据流水", stream_lines, accent="#8b5cf6")
+                _email_block(
+                    stream_label or "数据流水",
+                    f"{len(stream_lines)} 条",
+                    _email_checklist(stream_lines, "·", "#8b5cf6"),
+                )
             )
     else:
-        if solved:
-            sections.append(
-                _email_section("🎯", "解决的问题", [f"- [成员发布] {solved}"], accent="#14b8a6")
-            )
-        for icon, title, value, accent in (
-            ("✅", "完成事项", finished, "#22c55e"),
-            ("⚠️", "问题与风险", problems, "#f59e0b"),
-            ("🧭", "下一步计划", next_steps, "#3d78f5"),
-        ):
-            if value:
-                sections.append(
-                    _email_section(icon, title, [f"- [成员发布] {value}"], accent=accent)
-                )
-        if stream_lines:
-            sections.append(
-                _email_section("🔁", stream_label or "数据流水", stream_lines, accent="#8b5cf6")
-            )
-
-    if recent_changes or recent_changes_text:
-        if recent_changes_text:
-            change_lines = [
-                f"- {line.strip()}"
-                for line in recent_changes_text.splitlines()
-                if line.strip()
-            ]
-        else:
-            change_lines = [
-                f"- {item['summary']} · {item['path']}（{item['kind']}，"
-                f"相对 HEAD 累计 +{item['additions']} / −{item['deletions']}，"
-                f"{item['time'][:16].replace('T', ' ')}）"
-                for item in recent_changes
-            ]
-        sections.append(
-            _email_section("🗂️", "最近代码改动", change_lines, accent="#426fa6")
+        sections = _brief_sections(
+            brief,
+            status,
+            solved,
+            finished,
+            stream_lines,
+            stream_label,
+            change_lines,
+            detail=report_detail,
         )
 
-    word_count = len("".join(f"{solved}{finished}{problems}{next_steps}".split()))
-    stat_cards = [("日报字数", f"{word_count}", "本次填写", "#3d78f5")]
-    if solved:
-        stat_cards.append(("解决问题", "1 项", "已闭环", "#14b8a6"))
-    if next_steps:
-        stat_cards.append(("下一步", "1 项", "待推进", "#6366f1"))
-    if recent_changes:
-        stat_cards.append(("代码改动", f"{len(recent_changes)} 条", "随日报发送", "#426fa6"))
-    if workload and workload.get("total"):
-        stat_cards.append(
-            ("近 7 天", f"{workload['total']} 条", "累计进展", "#f59e0b")
-        )
-
-    headline = compact_progress_text(
-        solved or finished or next_steps or "本次日报已归档，详情见下方。", 52
-    )
-    summary_line = f"本次重点 · {headline}"
     badge = None
     date_parts = str(work_date).split("-")
     if len(date_parts) == 3:
@@ -765,8 +1013,8 @@ def send_progress_email(
         ],
         sections,
         f"{generated_at} · 数据来源：成员发布",
-        summary=summary_line,
-        stats=_email_stat_cards(stat_cards),
+        summary="",
+        stats="",
         chart=_email_bar_chart("近 7 天工作量", workload, "按天统计归档的进展条目数"),
         badge=badge,
     )

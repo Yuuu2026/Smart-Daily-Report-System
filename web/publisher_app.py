@@ -290,6 +290,7 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
         recent_changes_text=None,
         solved="",
         workload=None,
+        hours=None,
     ):
         """给多个收件人分别发送邮件，并逐条记录发送结果。"""
         settings = smtp_settings_from_env(sender_email)
@@ -320,6 +321,7 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
                     recent_changes_text=recent_changes_text,
                     solved=solved,
                     workload=workload,
+                    hours=hours,
                 )
             except EmailNotificationError as error:
                 error_message = str(error)
@@ -1493,6 +1495,17 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
         problems = request.form.get("problems", "").strip()
         next_steps = request.form.get("next_steps", "").strip()
         work_status = request.form.get("status", "已完成").strip() or "已完成"
+        hours_raw = request.form.get("hours", "").strip()
+        hours = ""
+        if hours_raw:
+            try:
+                hours_value = float(hours_raw)
+            except ValueError:
+                hours_value = -1
+            if not 0 < hours_value <= 24:
+                flash("投入工时请填写 0 到 24 之间的数字，或留空。", "error")
+                return redirect(url_for("home", _anchor="daily-form"))
+            hours = f"{hours_value:g}"
         title = request.form.get("title", "").strip()
         content = request.form.get("content", "").strip()
         progress_sections = (
@@ -1512,7 +1525,10 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
             ]
             if changes_text:
                 sections.append(f"最近代码改动：\n{changes_text}")
-            content = f"工作状态：{work_status}\n\n" + "\n\n".join(sections)
+            header_lines = [f"工作状态：{work_status}"]
+            if hours:
+                header_lines.append(f"投入工时：{hours} 小时")
+            content = "\n".join(header_lines) + "\n\n" + "\n\n".join(sections)
         source_url = request.form.get("source_url", "").strip()
         work_date = request.form.get("work_date", "")
         try:
@@ -1608,6 +1624,7 @@ def create_publisher_app(database_path=DATABASE_PATH, secret_key=None):
                 recent_changes_text=changes_text,
                 solved=solved,
                 workload=workload,
+                hours=hours,
                 attachments=[
                     str(Path(app.config["UPLOAD_FOLDER"]) / path)
                     for path in attachment_paths

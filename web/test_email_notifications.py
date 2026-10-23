@@ -235,9 +235,12 @@ class SmtpSettingsTests(unittest.TestCase):
         self.assertEqual(message["Subject"], "研一 张三 2026-10-11 智能日报")
         content = message.get_content()
         self.assertIn("智能日报系统自动生成", content)
-        self.assertIn("- [成员发布] 完成日报结构化渲染", content)
-        self.assertIn("- [成员发布] 历史数据存在旧标签", content)
-        self.assertIn("- [成员发布] 补充证据链接", content)
+        self.assertIn("今日概览", content)
+        self.assertIn("今日完成", content)
+        self.assertIn("来源：完成事项", content)
+        self.assertIn("完成日报结构化渲染", content)
+        self.assertIn("历史数据存在旧标签", content)
+        self.assertIn("补充证据链接", content)
         self.assertNotIn("来源链接", content)
 
     def test_progress_email_includes_escaped_code_changes_and_skips_empty(self):
