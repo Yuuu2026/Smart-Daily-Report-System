@@ -2,9 +2,12 @@
 """在终端里生成并发送今日日报，不需要打开网页。
 
 默认流程：读取当天的 Git 提交、本地代码改动、AI 会话提示词与飞书消息，
-拼出一份日报草稿，打印在终端里；确认收件邮箱后写入归档并发送邮件。
+拼出一份日报草稿打印在终端；然后只问一次（回车发送 / 输入邮箱改发 / n 取消），
+确认后写入归档并发送邮件。
 
-    py -3.12 scripts/report_cli.py                 # 今天，交互确认
+平时双击项目根目录的「发送日报.bat」即可，等价于下面第一条命令。
+
+    py -3.12 scripts/report_cli.py                 # 今天，打印草稿后一步确认
     py -3.12 scripts/report_cli.py --dry-run       # 只看草稿，不发
     py -3.12 scripts/report_cli.py --date 2026-10-22
     py -3.12 scripts/report_cli.py --to a@x.com,b@y.com --yes
@@ -14,6 +17,7 @@
 import argparse
 import datetime
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -267,6 +271,42 @@ def ask_yes(prompt, default=True):
     return answer in ("y", "yes", "是", "好", "要")
 
 
+CANCEL_WORDS = {"n", "no", "q", "quit", "取消", "不发", "退出"}
+RECIPIENT_SEPARATORS = re.compile(r"[,，;；\s]+")
+
+
+def parse_recipients(text):
+    """把「a@x.com, b@y.com」这类输入拆成邮箱列表。
+
+    normalize_recipients 是变参函数，只接受单个地址；这里负责拆分再交给它校验。
+    """
+    parts = [part for part in RECIPIENT_SEPARATORS.split(text or "") if part]
+    return list(normalize_recipients(*parts))
+
+
+def ask_send_target(recipients):
+    """一步确认：回车就发，改邮箱就重填，输入 n 取消。
+
+    返回收件人列表；用户取消时返回 None。
+    """
+    default_text = "、".join(recipients)
+    _out()
+    if default_text:
+        _out(f"  回车直接发送到 {default_text}")
+        _out("  想改收件人就输入邮箱（多个用逗号分隔），输入 n 取消")
+    else:
+        _out("  输入收件邮箱（多个用逗号分隔），输入 n 取消")
+    try:
+        raw = input("  > ").strip()
+    except EOFError:
+        raw = ""
+    if raw.lower() in CANCEL_WORDS:
+        return None
+    if not raw:
+        return list(recipients)
+    return parse_recipients(raw)
+
+
 def save_item(connection, user, report, attachments, report_detail="标准"):
     content = build_content(report)
     if not content:
@@ -480,19 +520,14 @@ def main(argv=None):
 
     recipients = list(default_recipients)
     if args.to:
-        recipients = list(normalize_recipients(args.to))
+        recipients = parse_recipients(args.to)
     elif not auto_send:
         print_draft(report, signals, recipients, feishu_choice, user, sent_today)
-        typed = ask(
-            "收件邮箱（多个用逗号分隔，直接回车用默认）",
-            "、".join(recipients) if recipients else "",
-        )
-        recipients = list(normalize_recipients(typed))
-        if signals["feishu"] and not args.no_feishu and config["INCLUDE_FEISHU"]:
-            feishu_choice = ask_yes("附带今天的飞书群聊记录？", default=True)
-        if not ask_yes("确认发送？", default=True):
+        chosen = ask_send_target(recipients)
+        if chosen is None:
             _out("已取消，没有写入归档。")
             return 0
+        recipients = chosen
     else:
         print_draft(report, signals, recipients, feishu_choice, user, sent_today)
 

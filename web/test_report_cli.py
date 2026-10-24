@@ -1,15 +1,18 @@
 """命令行日报入口的测试。"""
 
 import datetime
+import io
 import unittest
 from unittest.mock import MagicMock, patch
 
 from scripts.report_cli import (
+    ask_send_target,
     build_content,
     configured_recipients,
     deliver,
     load_config,
     parse_args,
+    parse_recipients,
     smtp_settings_for,
 )
 from web import email_notifications
@@ -223,6 +226,49 @@ class SmtpConfigTests(unittest.TestCase):
         config = self._config(SMTP_HOST="smtp.example.com")
         with self.assertRaises(email_notifications.EmailNotificationError):
             smtp_settings_for(self.USER, config)
+
+
+class SendTargetTests(unittest.TestCase):
+    """一步确认：回车用默认、填邮箱替换、n 取消。"""
+
+    def _ask(self, typed, recipients=("me@qq.com",)):
+        with patch("builtins.input", return_value=typed), patch(
+            "sys.stdout", new_callable=io.StringIO
+        ):
+            return ask_send_target(list(recipients))
+
+    def test_enter_keeps_default_recipients(self):
+        self.assertEqual(self._ask(""), ["me@qq.com"])
+
+    def test_typed_email_replaces_default(self):
+        self.assertEqual(self._ask("a@x.com, b@y.com"), ["a@x.com", "b@y.com"])
+
+    def test_cancel_words_return_none(self):
+        for word in ("n", "N", "取消", "不发"):
+            with self.subTest(word=word):
+                self.assertIsNone(self._ask(word))
+
+    def test_empty_default_and_empty_input_returns_empty(self):
+        self.assertEqual(self._ask("", recipients=()), [])
+
+
+class RecipientParsingTests(unittest.TestCase):
+    def test_comma_and_space_separated_are_split(self):
+        self.assertEqual(
+            parse_recipients("a@x.com, b@y.com  c@z.com"),
+            ["a@x.com", "b@y.com", "c@z.com"],
+        )
+
+    def test_chinese_comma_is_accepted(self):
+        self.assertEqual(parse_recipients("a@x.com，b@y.com"), ["a@x.com", "b@y.com"])
+
+    def test_invalid_address_is_rejected(self):
+        with self.assertRaises(email_notifications.EmailNotificationError):
+            parse_recipients("a@x.com, not-an-email")
+
+    def test_multiple_recipients_allowed_on_command_line(self):
+        args = parse_args(["--to", "a@x.com,b@y.com", "--yes"])
+        self.assertEqual(args.to, "a@x.com,b@y.com")
 
 
 if __name__ == "__main__":
