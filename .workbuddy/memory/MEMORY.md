@@ -77,6 +77,21 @@
   「solved 非空才出现『解决的问题』」的旧测试。
 - 工作台表单编号：① 解决了什么问题 ② 下一步准备做什么 ③ 今天投入了多久（可选）④ 添加照片。
 
+## 命令行发送（2026-10-24）
+- `scripts/report_cli.py` 是网页发布的命令行等价物：读 Git 提交 + `.claude` 改动缓存 +
+  AI 会话提示词 + 飞书消息 → 打印草稿 → 问收件人/飞书 → 写 `published_items` → 发信。
+  参数：`--dry-run/--yes/--date/--user/--to/--hours/--solved/--attach/--no-feishu/--sync-feishu`。
+- **完成项只来自 `git log`**（`web/daily_summary.py`），提示词（`web/session_prompts.py`）
+  只用于总述/标签/下一步；未提交改动写成「未提交」。改总结口径先改这两个模块，别在 CLI 里拼字符串。
+- 提示词采集读 `~/.workbuddy/projects/<slug>` 与 `~/.claude/projects/<slug>` 的 jsonl；
+  slug 规则不同（WorkBuddy 保留中文，Claude Code 非字母数字全变 `-`），见 `workbuddy_slug/claude_slug`。
+  噪音判定必须用**清洗后**文本，原始文本含大段 system-reminder，按行数会误杀。
+- 钩子模板 `scripts/git-hooks/post-commit` 入库，`--install-hook` 复制到 `.git/hooks`。
+  只在 `[ -t 0 ]` 时询问（IDE/CI 自动跳过）；`.git/daily-report-hook.off` 是「不再询问」开关。
+- CLI 发信用 `send_progress_email`，与网页同一模板；发送记录写 `email_delivery_logs`
+  （`delivery_type='daily_report'`），`today_delivery_count` 用它提醒重复发送。
+- 飞书默认只读库里已同步的消息；`--sync-feishu` 才调 `collect_feishu_recent_messages`（只能拉最近 5 分钟）。
+
 ## 日报表单字段与工作量柱状图
 - 工作台正文只有两问：「解决了什么问题？」(`solved`) 与「下一步准备做什么？」(`next_steps`)；`finished` / `problems`
   字段仍保留在后台解析（历史数据兼容），表单不再渲染。

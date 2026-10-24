@@ -1,0 +1,36 @@
+#!/bin/sh
+# 提交成功后询问是否发送当天日报。
+#
+# 只在交互终端里询问；IDE、CI、脚本调用时 stdin 不是终端，自动跳过。
+# 回答 a 会关闭询问，恢复：rm .git/daily-report-hook.off
+# 临时跳过：DAILY_REPORT_SKIP=1 git commit ...
+
+[ -n "$DAILY_REPORT_SKIP" ] && exit 0
+[ -t 0 ] || exit 0
+
+ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+[ -f "$ROOT/scripts/report_cli.py" ] || exit 0
+
+FLAG="$ROOT/.git/daily-report-hook.off"
+[ -f "$FLAG" ] && exit 0
+
+if command -v py >/dev/null 2>&1; then
+  PY="py -3.12"
+elif command -v python >/dev/null 2>&1; then
+  PY="python"
+else
+  exit 0
+fi
+
+printf '\n[智能日报] 要现在发送今天的工作日报吗？[y/N/a=不再询问] '
+read -r answer
+case "$answer" in
+  y|Y|yes|YES)
+    cd "$ROOT" && DAILY_REPORT_SKIP=1 $PY scripts/report_cli.py
+    ;;
+  a|A)
+    : > "$FLAG"
+    printf '[智能日报] 已关闭提交后询问，恢复命令：rm %s\n' "$FLAG"
+    ;;
+esac
+exit 0
