@@ -33,6 +33,57 @@ from web.publisher_repo import (  # noqa: E402
 DEFAULT_DB = ROOT / "web" / "daily_report.db"
 DEFAULT_UPLOADS = ROOT / "uploads"
 RULE = "─" * 58
+CONFIG_PATH = Path(__file__).resolve().parent / "report_config.py"
+
+CONFIG_DEFAULTS = {
+    "USER": "",
+    "RECIPIENTS": (),
+    "HOURS": "",
+    "REPORT_DETAIL": "标准",
+    "SMTP_HOST": "",
+    "SMTP_PORT": "",
+    "SMTP_USERNAME": "",
+    "SMTP_PASSWORD": "",
+    "SMTP_SECURE": "",
+    "INCLUDE_FEISHU": True,
+    "SYNC_FEISHU": False,
+    "AUTO_SEND": False,
+}
+
+
+def load_config(path=None):
+    """读取 scripts/report_config.py；文件缺失或写错时退回默认值，不让发送流程中断。"""
+    source = Path(path) if path else CONFIG_PATH
+    values = dict(CONFIG_DEFAULTS)
+    if not source.exists():
+        return values
+    namespace = {}
+    try:
+        code = compile(source.read_text(encoding="utf-8"), str(source), "exec")
+        exec(code, namespace)  # noqa: S102 - 读的是仓库内的配置文件
+    except (OSError, SyntaxError, ValueError) as error:
+        print(f"配置文件读取失败，改用默认值：{error}")
+        return values
+    for key in values:
+        if key in namespace:
+            values[key] = namespace[key]
+    if values["REPORT_DETAIL"] not in {"简洁", "标准", "详细"}:
+        values["REPORT_DETAIL"] = "标准"
+    recipients = values["RECIPIENTS"]
+    if isinstance(recipients, str):
+        recipients = [item.strip() for item in recipients.split(",") if item.strip()]
+    values["RECIPIENTS"] = tuple(str(item).strip() for item in recipients if str(item).strip())
+    values["HOURS"] = "" if values["HOURS"] is None else str(values["HOURS"]).strip()
+    values["USER"] = str(values["USER"] or "").strip()
+    for key in ("SMTP_HOST", "SMTP_PORT", "SMTP_USERNAME", "SMTP_PASSWORD", "SMTP_SECURE"):
+        values[key] = "" if values[key] is None else str(values[key]).strip()
+    values["INCLUDE_FEISHU"] = bool(values["INCLUDE_FEISHU"])
+    values["SYNC_FEISHU"] = bool(values["SYNC_FEISHU"])
+    values["AUTO_SEND"] = bool(values["AUTO_SEND"])
+    return values
+
+
+CONFIG = load_config()
 
 
 def _out(text=""):
@@ -216,7 +267,7 @@ def ask_yes(prompt, default=True):
     return answer in ("y", "yes", "是", "好", "要")
 
 
-def save_item(connection, user, report, attachments):
+def save_item(connection, user, report, attachments, report_detail="标准"):
     content = build_content(report)
     if not content:
         return None
@@ -231,7 +282,7 @@ def save_item(connection, user, report, attachments):
             report["date"],
             "今日工作进展",
             content,
-            "标准",
+            report_detail,
             json.dumps(attachments, ensure_ascii=False),
             None,
             created_at,
@@ -240,10 +291,46 @@ def save_item(connection, user, report, attachments):
     return cursor.lastrowid
 
 
-def deliver(user, recipients, report, signals, feishu_choice, attachments):
-    """逐人发送并记录结果，和网页发布的发送口径一致。"""
+def smtp_settings_for(user, config=None):
+    """取发信配置：配置文件里写了 SMTP_HOST 就用它，否则读本机 .smtp.local.json。"""
+    config = CONFIG if config is None else config
+    host = str(config.get("SMTP_HOST") or "").strip()
     sender_email = (user.get("sender_email") or "").strip()
-    settings = email_notifications.smtp_settings_from_env(sender_email)
+    if not host:
+        return email_notifications.smtp_settings_from_env(sender_email)
+
+    username = str(config.get("SMTP_USERNAME") or "").strip() or sender_email
+    password = str(config.get("SMTP_PASSWORD") or "")
+    if not username or not password:
+        raise email_notifications.EmailNotificationError(
+            f"{CONFIG_PATH.name} 里填了 SMTP_HOST，但 SMTP_USERNAME 或 SMTP_PASSWORD 是空的。"
+        )
+    port_text = str(config.get("SMTP_PORT") or "").strip() or "465"
+    try:
+        port = int(port_text)
+    except ValueError:
+        raise email_notifications.EmailNotificationError("SMTP_PORT 必须是数字。") from None
+    secure = str(config.get("SMTP_SECURE") or "").strip().lower()
+    if secure not in {"ssl", "starttls", "none"}:
+        secure = "ssl" if port == 465 else "starttls"
+    return email_notifications.SmtpSettings(
+        host=host,
+        port=port,
+        username=username,
+        password=password,
+        sender=sender_email or username,
+        secure=secure,
+    )
+
+
+def deliver(
+    user, recipients, report, signals, feishu_choice, attachments, report_detail="标准"
+):
+    """逐人发送并记录结果，和网页发布的发送口径一致。"""
+    settings = smtp_settings_for(user)
+    sender_email = (
+        getattr(settings, "sender", "") if settings else ""
+    ) or (user.get("sender_email") or "").strip()
     chat_name = signals["feishu"][0]["chat_name"] if signals["feishu"] else ""
     stream = []
     if feishu_choice:
@@ -267,7 +354,7 @@ def deliver(user, recipients, report, signals, feishu_choice, attachments):
                 status="已完成",
                 stream_items=stream,
                 stream_label=chat_name or None,
-                report_detail="标准",
+                report_detail=report_detail,
                 attachments=attachments,
                 solved=report["solved"],
                 workload=report["workload"],
@@ -322,9 +409,11 @@ def parse_args(argv=None):
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--date", type=_iso_date, default=datetime.date.today(), help="默认今天")
-    parser.add_argument("--user", help="发布者用户名，默认取上次发布的人")
+    parser.add_argument(
+        "--user", default=CONFIG["USER"] or None, help="发布者用户名，默认取上次发布的人"
+    )
     parser.add_argument("--to", help="收件邮箱，多个用逗号分隔")
-    parser.add_argument("--hours", default="", help="投入工时（小时），不填则不计")
+    parser.add_argument("--hours", default=CONFIG["HOURS"], help="投入工时（小时），不填则不计")
     parser.add_argument("--solved", default="", help="手工补充解决的问题，多条用 | 分隔")
     parser.add_argument("--attach", action="append", default=[], help="附件路径，可重复")
     parser.add_argument("--no-feishu", action="store_true", help="不附带当天飞书群聊")
@@ -341,13 +430,16 @@ def main(argv=None):
     if args.install_hook or args.uninstall_hook:
         return install_hook(remove=args.uninstall_hook)
 
+    config = CONFIG
+    report_detail = config["REPORT_DETAIL"]
+
     if not DEFAULT_DB.exists():
         raise SystemExit(f"数据库不存在：{DEFAULT_DB}")
 
     with database_connection(str(DEFAULT_DB)) as connection:
         user = load_user(connection, args.user)
 
-    if args.sync_feishu:
+    if args.sync_feishu or config["SYNC_FEISHU"]:
         sync_feishu(user)
 
     with database_connection(str(DEFAULT_DB)) as connection:
@@ -369,8 +461,12 @@ def main(argv=None):
             raise SystemExit(f"附件不存在：{path}")
         attachments.append(str(path))
 
-    default_recipients = configured_recipients(user)
-    feishu_choice = bool(signals["feishu"]) and not args.no_feishu
+    config_recipients = list(config["RECIPIENTS"])
+    default_recipients = config_recipients or configured_recipients(user)
+    feishu_choice = (
+        bool(signals["feishu"]) and not args.no_feishu and config["INCLUDE_FEISHU"]
+    )
+    auto_send = bool(args.yes or config["AUTO_SEND"])
 
     if args.dry_run:
         print_draft(report, signals, default_recipients, feishu_choice, user, sent_today)
@@ -385,14 +481,14 @@ def main(argv=None):
     recipients = list(default_recipients)
     if args.to:
         recipients = list(normalize_recipients(args.to))
-    elif not args.yes:
+    elif not auto_send:
         print_draft(report, signals, recipients, feishu_choice, user, sent_today)
         typed = ask(
             "收件邮箱（多个用逗号分隔，直接回车用默认）",
             "、".join(recipients) if recipients else "",
         )
         recipients = list(normalize_recipients(typed))
-        if signals["feishu"] and not args.no_feishu:
+        if signals["feishu"] and not args.no_feishu and config["INCLUDE_FEISHU"]:
             feishu_choice = ask_yes("附带今天的飞书群聊记录？", default=True)
         if not ask_yes("确认发送？", default=True):
             _out("已取消，没有写入归档。")
@@ -401,17 +497,21 @@ def main(argv=None):
         print_draft(report, signals, recipients, feishu_choice, user, sent_today)
 
     if not recipients:
-        raise SystemExit("没有收件人。用 --to 指定，或先在网页里配置通知邮箱。")
+        raise SystemExit(
+            f"没有收件人。改 {CONFIG_PATH.name} 里的 RECIPIENTS，或用 --to 指定。"
+        )
     for recipient in recipients:
         if not email_notifications.is_valid_email(recipient):
             raise SystemExit(f"邮箱格式不正确：{recipient}")
 
     with database_connection(str(DEFAULT_DB)) as connection:
-        item_id = save_item(connection, user, report, attachments)
+        item_id = save_item(connection, user, report, attachments, report_detail)
     _out(f"已写入归档（#{item_id}）。")
 
     try:
-        sent, failed = deliver(user, recipients, report, signals, feishu_choice, attachments)
+        sent, failed = deliver(
+            user, recipients, report, signals, feishu_choice, attachments, report_detail
+        )
     except email_notifications.EmailNotificationError as error:
         raise SystemExit(f"归档已保存，但邮件发送失败：{error}") from None
 
