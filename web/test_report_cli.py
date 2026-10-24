@@ -6,7 +6,9 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from scripts.report_cli import (
+    CANCEL,
     EDIT,
+    SEND,
     ask_send_target,
     build_content,
     configured_recipients,
@@ -230,7 +232,7 @@ class SmtpConfigTests(unittest.TestCase):
 
 
 class SendTargetTests(unittest.TestCase):
-    """一步确认：回车用默认、填邮箱替换、n 取消。"""
+    """一步确认：回车用默认、填邮箱替换、r 改收件人、n 取消。"""
 
     def _ask(self, typed, recipients=("me@qq.com",)):
         with patch("builtins.input", return_value=typed), patch(
@@ -238,30 +240,62 @@ class SendTargetTests(unittest.TestCase):
         ):
             return ask_send_target(list(recipients))
 
+    def _ask_many(self, answers, recipients=("me@qq.com",)):
+        with patch("builtins.input", side_effect=answers), patch(
+            "sys.stdout", new_callable=io.StringIO
+        ):
+            return ask_send_target(list(recipients))
+
     def test_enter_keeps_default_recipients(self):
-        self.assertEqual(self._ask(""), ["me@qq.com"])
+        self.assertEqual(self._ask(""), (SEND, ["me@qq.com"]))
 
     def test_typed_email_replaces_default(self):
-        self.assertEqual(self._ask("a@x.com, b@y.com"), ["a@x.com", "b@y.com"])
+        self.assertEqual(self._ask("a@x.com, b@y.com"), (SEND, ["a@x.com", "b@y.com"]))
 
-    def test_cancel_words_return_none(self):
+    def test_cancel_words_cancel(self):
         for word in ("n", "N", "取消", "不发"):
             with self.subTest(word=word):
-                self.assertIsNone(self._ask(word))
+                self.assertEqual(self._ask(word), (CANCEL, ["me@qq.com"]))
 
     def test_e_enters_edit_mode(self):
         for word in ("e", "E", "编辑"):
             with self.subTest(word=word):
-                self.assertEqual(self._ask(word), EDIT)
+                self.assertEqual(self._ask(word), (EDIT, ["me@qq.com"]))
+
+    def test_r_asks_for_a_new_address(self):
+        self.assertEqual(
+            self._ask_many(["r", "new@x.com", ""]), (SEND, ["new@x.com"])
+        )
+
+    def test_r_accepts_chinese_keyword_and_multiple_addresses(self):
+        self.assertEqual(
+            self._ask_many(["收件人", "a@x.com, b@y.com", ""]),
+            (SEND, ["a@x.com", "b@y.com"]),
+        )
+
+    def test_r_with_blank_line_keeps_default(self):
+        self.assertEqual(self._ask_many(["r", "", ""]), (SEND, ["me@qq.com"]))
+
+    def test_r_with_bad_address_keeps_default(self):
+        with patch("builtins.input", side_effect=["r", "bad-address", ""]), patch(
+            "sys.stdout", new_callable=io.StringIO
+        ) as stdout:
+            self.assertEqual(ask_send_target(["me@qq.com"]), (SEND, ["me@qq.com"]))
+        self.assertIn("邮箱", stdout.getvalue())
+
+    def test_recipients_changed_by_r_survive_a_later_edit(self):
+        self.assertEqual(
+            self._ask_many(["r", "new@x.com", "e"]), (EDIT, ["new@x.com"])
+        )
 
     def test_invalid_email_asks_again(self):
         with patch("builtins.input", side_effect=["bad-address", "ok@x.com"]), patch(
             "sys.stdout", new_callable=io.StringIO
         ):
-            self.assertEqual(ask_send_target(["me@qq.com"]), ["ok@x.com"])
+            self.assertEqual(ask_send_target(["me@qq.com"]), (SEND, ["ok@x.com"]))
 
     def test_empty_default_and_empty_input_returns_empty(self):
-        self.assertEqual(self._ask("", recipients=()), [])
+        self.assertEqual(self._ask("", recipients=()), (SEND, []))
 
 
 class RecipientParsingTests(unittest.TestCase):

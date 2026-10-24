@@ -2,7 +2,7 @@
 """在终端里生成并发送今日日报，不需要打开网页。
 
 默认流程：读取当天的 Git 提交、本地代码改动、AI 会话提示词与飞书消息，
-拼出一份日报草稿打印在终端；然后只问一次（回车发送 / 输入邮箱改发 / e 编辑 / n 取消），
+拼出一份日报草稿打印在终端；然后只问一次（回车发送 / r 改收件人 / e 改内容 / n 取消），
 确认后写入归档并发送邮件。选 e 后直接报编号说明改哪一条、再填新内容；
 也可以输入 a 新增、d 删除、h 改工时。
 
@@ -278,7 +278,10 @@ def ask_yes(prompt, default=True):
 
 CANCEL_WORDS = {"n", "no", "q", "quit", "取消", "不发", "退出"}
 EDIT_WORDS = {"e", "edit", "改", "编辑"}
+RECIPIENT_WORDS = {"r", "recipient", "recipients", "to", "收件人"}
+SEND = "send"
 EDIT = "edit"
+CANCEL = "cancel"
 RECIPIENT_SEPARATORS = re.compile(r"[,，;；\s]+")
 
 
@@ -291,32 +294,49 @@ def parse_recipients(text):
     return list(normalize_recipients(*parts))
 
 
-def ask_send_target(recipients):
-    """一步确认：回车发送 / 输入邮箱改发 / e 编辑草稿 / n 取消。
+def _ask_recipients(current):
+    """在确认环节单独改收件人；填错只提示，保持原来的列表。"""
+    _out("  新的收件邮箱（多个用逗号隔开，回车不改）：")
+    try:
+        typed = input("  > ").strip()
+    except EOFError:
+        typed = ""
+    if not typed:
+        return current
+    try:
+        return parse_recipients(typed)
+    except email_notifications.EmailNotificationError as error:
+        _out(f"  {error}")
+        return current
 
-    返回收件人列表、EDIT 哨兵，或 None（用户取消）。
+
+def ask_send_target(recipients):
+    """一步确认：回车发送 / r 改收件人 / 直接输邮箱改发 / e 改内容 / n 取消。
+
+    返回 (动作, 收件人列表)，动作是 SEND / EDIT / CANCEL。
+    r 改过的收件人会跟着返回，所以先改收件人再按 e 改内容也不会丢。
     """
-    default_text = "、".join(recipients)
+    current = list(recipients)
     while True:
         _out()
-        if default_text:
-            _out(f"  回车直接发送到 {default_text}")
-            _out("  输入其它邮箱改发 · e 改内容 · n 取消")
-        else:
-            _out("  输入收件邮箱 · e 改内容 · n 取消")
+        _out("  收件人：" + ("、".join(current) if current else "（还没配置）"))
+        _out("  回车发送 · r 改收件人 · e 改内容 · n 取消")
         try:
             raw = input("  > ").strip()
         except EOFError:
             raw = ""
         lowered = raw.lower()
         if lowered in CANCEL_WORDS:
-            return None
+            return CANCEL, list(current)
         if lowered in EDIT_WORDS:
-            return EDIT
+            return EDIT, list(current)
+        if lowered in RECIPIENT_WORDS:
+            current = _ask_recipients(current)
+            continue
         if not raw:
-            return list(recipients)
+            return SEND, list(current)
         try:
-            return parse_recipients(raw)
+            return SEND, parse_recipients(raw)
         except email_notifications.EmailNotificationError as error:
             _out(f"  {error}")
             _out("  请重新输入。")
@@ -540,17 +560,16 @@ def main(argv=None):
     print_draft(report, signals, recipients, feishu_choice, user, sent_today)
     if not auto_send:
         while True:
-            chosen = ask_send_target(recipients)
-            if chosen is None:
+            action, recipients = ask_send_target(recipients)
+            if action == CANCEL:
                 _out("已取消，没有写入归档。")
                 return 0
-            if chosen == EDIT:
+            if action == EDIT:
                 edit_one(report, writer=_out)
                 if not build_content(report):
                     _out("  四段都空了，没有内容可发，已取消。")
                     return 0
                 continue
-            recipients = chosen
             break
 
     if not recipients:
