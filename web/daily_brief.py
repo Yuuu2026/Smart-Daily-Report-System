@@ -44,14 +44,6 @@ WORKLOAD_LABELS = {
     "messages": "群聊消息",
 }
 
-INSIGHT_TONES = {
-    "good": "状态良好",
-    "steady": "状态平稳",
-    "tight": "节奏偏紧",
-    "low": "记录偏少",
-}
-
-
 def trim(text, limit=MAX_ITEM_LENGTH):
     """把过长的一行截断，保留可读性。"""
     text = " ".join(str(text or "").split())
@@ -211,30 +203,6 @@ def _build_summary(done_items, plan_items, additions, deletions, problems):
     return "".join(sentences)
 
 
-def _build_insight(done_items, plan_items, problems):
-    """根据完成量、风险与计划给一句状态和一句建议。"""
-    risk = bool(problems)
-    if len(done_items) >= 3 and not risk:
-        tone = "good"
-    elif len(done_items) >= 2:
-        tone = "steady"
-    elif risk:
-        tone = "tight"
-    else:
-        tone = "low"
-
-    if risk:
-        first_problem = split_items(problems, 1)
-        focus = first_problem[0] if first_problem else problems
-        advice = f"先处理「{trim(focus, 24)}」，再推进新任务。"
-    elif plan_items:
-        advice = f"明天优先推进「{trim(plan_items[0], 24)}」，做完再开下一项。"
-    else:
-        advice = "补一条明日计划，明天开工时可以直接接上。"
-
-    return {"state": INSIGHT_TONES[tone], "tone": tone, "advice": advice}
-
-
 def build_brief(
     solved="",
     finished="",
@@ -283,6 +251,5 @@ def build_brief(
         "problem_items": split_items(problems, limit=4),
         "mix": mix["rows"],
         "mix_caption": mix["caption"],
-        "insight": _build_insight(done_items, plan_items, problems),
         "change_total": {"additions": additions, "deletions": deletions},
     }

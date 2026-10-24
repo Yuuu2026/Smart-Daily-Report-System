@@ -506,31 +506,6 @@ def _email_bars(rows):
     )
 
 
-def _email_insight(state, advice, tone="steady"):
-    """状态 + 建议的一行提示条。"""
-    if not state and not advice:
-        return ""
-    palette = {
-        "good": ("#22c55e", "#f3fbf5"),
-        "steady": ("#3d78f5", "#f5f8ff"),
-        "tight": ("#f59e0b", "#fffaf1"),
-        "low": ("#8a94ab", "#f8faff"),
-    }
-    accent, background = palette.get(tone, palette["steady"])
-    return (
-        '<table width="100%" cellpadding="0" cellspacing="0" role="presentation" '
-        'style="margin-top:8px;background-color:' + background + ";border:1px solid "
-        '#eef2fb;border-radius:10px;">'
-        '<tr><td width="96" valign="middle" style="padding:10px 0 10px 13px;">'
-        '<span style="display:inline-block;padding:2px 9px;border-radius:999px;'
-        f'background-color:{accent};color:#ffffff;font-size:11px;font-weight:700;'
-        f'line-height:1.7;">{_html_escape(state)}</span></td>'
-        '<td valign="middle" style="padding:10px 13px 10px 4px;font-size:12px;'
-        f'color:#46516a;line-height:1.75;">{_html_escape(advice)}</td>'
-        "</tr></table>"
-    )
-
-
 def _email_stat_cards(cards):
     """一行等宽数据卡片；cards 为 [(标签, 数值, 说明, 色值)]。"""
     cards = [card for card in cards or []][:4]
@@ -799,16 +774,6 @@ def _brief_sections(
                 "明日计划",
                 f"{len(brief['plan_items'])} 项" if brief["plan_items"] else "待补充",
                 _email_checklist(plan_items, "□", "#8a94ab"),
-            )
-        )
-
-    insight = brief["insight"]
-    if insight["state"] and insight["advice"]:
-        sections.append(
-            _email_block(
-                "工作洞察",
-                "",
-                _email_insight(insight["state"], insight["advice"], insight["tone"]),
             )
         )
 

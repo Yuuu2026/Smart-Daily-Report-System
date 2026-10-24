@@ -95,8 +95,6 @@ class BuildBriefTests(unittest.TestCase):
         )
         self.assertIn("修好了邮件图表渲染", brief["summary"])
         self.assertIn("风险", brief["summary"])
-        self.assertEqual(brief["insight"]["tone"], "tight")
-        self.assertIn("部分客户端不显示背景色", brief["insight"]["advice"])
 
     def test_empty_brief_does_not_invent_content(self):
         brief = build_brief()
@@ -104,14 +102,6 @@ class BuildBriefTests(unittest.TestCase):
         self.assertEqual(brief["done_items"], [])
         self.assertEqual(brief["mix"], [])
         self.assertEqual(brief["tags"], [])
-
-    def test_tight_state_when_only_risks_recorded(self):
-        brief = build_brief(problems="接口偶发超时")
-        self.assertEqual(brief["insight"]["state"], "节奏偏紧")
-
-    def test_good_state_with_three_items_and_no_risk(self):
-        brief = build_brief(solved="做了甲\n做了乙\n做了丙")
-        self.assertEqual(brief["insight"]["state"], "状态良好")
 
 
 class EmailSectionsTests(unittest.TestCase):
@@ -154,8 +144,9 @@ class EmailSectionsTests(unittest.TestCase):
             hours="6.5",
         )
         for block in ("今日概览", "今日总结", "今日完成", "问题与风险", "改动分布",
-                      "明日计划", "工作洞察", "最近代码改动", "今日任务", "投入工时"):
+                      "明日计划", "最近代码改动", "今日任务", "投入工时"):
             self.assertIn(block, body)
+        self.assertNotIn("工作洞察", body)
         self.assertIn("完成率 50%", body)
         self.assertIn("6.5h", body)
         self.assertIn("+58", body)
