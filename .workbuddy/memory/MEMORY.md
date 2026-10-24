@@ -8,6 +8,9 @@
 - **GitHub 推送必须走代理**（本机 Clash Verge，端口 `127.0.0.1:7897`），已配置：
   `git config --global http.https://github.com.proxy http://127.0.0.1:7897`
   代理未开时报 `Recv failure: Connection was reset`（非认证问题）。
+  代理开着也可能卡住：2026-10-24 用内联 `credential.helper` 推送超时，改用
+  `git -c credential.helper="" push "https://Yuuu2026:$TOKEN@github.com/Yuuu2026/Smart-Daily-Report-System.git" master`
+  一次成功。`curl` 直连 github 返回 000 是没走代理，加 `-x http://127.0.0.1:7897` 才是真实连通性。
 - CI：`.github/workflows/ci.yml`，push/PR 到 main|master 时在 ubuntu-latest + Python 3.12 上跑
   `python -m unittest discover -v`，真实发现 40 个测试。公开仓库 Actions 免费无限额度。
 - 想验证整条流水线是否还能跑通时，用 `git commit --allow-empty` 发空提交即可（会完整触发 CI → Deploy → Pages），
@@ -88,6 +91,7 @@
   噪音判定必须用**清洗后**文本，原始文本含大段 system-reminder，按行数会误杀。
 - 钩子模板 `scripts/git-hooks/post-commit` 入库，`--install-hook` 复制到 `.git/hooks`。
   只在 `[ -t 0 ]` 时询问（IDE/CI 自动跳过）；`.git/daily-report-hook.off` 是「不再询问」开关。
+  **本仓库已安装**（2026-10-24），用户在终端 `git commit` 会被问一句。
 - CLI 发信用 `send_progress_email`，与网页同一模板；发送记录写 `email_delivery_logs`
   （`delivery_type='daily_report'`），`today_delivery_count` 用它提醒重复发送。
 - 飞书默认只读库里已同步的消息；`--sync-feishu` 才调 `collect_feishu_recent_messages`（只能拉最近 5 分钟）。
