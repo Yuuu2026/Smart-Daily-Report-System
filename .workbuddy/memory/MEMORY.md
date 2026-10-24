@@ -10,7 +10,11 @@
   代理未开时报 `Recv failure: Connection was reset`（非认证问题）。
   代理开着也可能卡住：2026-10-24 用内联 `credential.helper` 推送超时，改用
   `git -c credential.helper="" push "https://Yuuu2026:$TOKEN@github.com/Yuuu2026/Smart-Daily-Report-System.git" master`
-  一次成功。`curl` 直连 github 返回 000 是没走代理，加 `-x http://127.0.0.1:7897` 才是真实连通性。
+  一次成功。**但 URL 内嵌凭据后来被 GitHub 拒了**（`Invalid username or token`，
+  同一个 token 打 API 仍 200），现在用 Basic 头：
+  `AUTH=$(printf "Yuuu2026:%s" "$TOKEN" | base64 -w0)`，
+  `git -c credential.helper="" -c http.https://github.com.proxy=http://127.0.0.1:7897 -c http.extraHeader="Authorization: Basic $AUTH" push https://github.com/Yuuu2026/Smart-Daily-Report-System.git master`。
+  `curl` 直连 github 返回 000 是没走代理，加 `-x http://127.0.0.1:7897` 才是真实连通性。
 - CI：`.github/workflows/ci.yml`，push/PR 到 main|master 时在 ubuntu-latest + Python 3.12 上跑
   `python -m unittest discover -v`，真实发现 40 个测试。公开仓库 Actions 免费无限额度。
 - 想验证整条流水线是否还能跑通时，用 `git commit --allow-empty` 发空提交即可（会完整触发 CI → Deploy → Pages），
@@ -81,9 +85,14 @@
 - 工作台表单编号：① 解决了什么问题 ② 下一步准备做什么 ③ 今天投入了多久（可选）④ 添加照片。
 
 ## 命令行发送（2026-10-24）
+- **日常入口是根目录 `发送日报.bat`**（双击即发，等价 `py -3.12 scripts/report_cli.py`）：
+  只接受能 `import flask` 的 Python 3，无参数时结束后 `pause`，带参数（如 `--dry-run`）不暂停。
+  改交互先看 `ask_send_target()`：回车=发默认、输邮箱=改发、`n`=取消，只问一次。
 - `scripts/report_cli.py` 是网页发布的命令行等价物：读 Git 提交 + `.claude` 改动缓存 +
-  AI 会话提示词 + 飞书消息 → 打印草稿 → 问收件人/飞书 → 写 `published_items` → 发信。
+  AI 会话提示词 + 飞书消息 → 打印草稿 → 一步确认 → 写 `published_items` → 发信。
   参数：`--dry-run/--yes/--date/--user/--to/--hours/--solved/--attach/--no-feishu/--sync-feishu`。
+- 收件人输入统一走 `parse_recipients()`：`normalize_recipients` 是变参函数，
+  **直接传「a,b」会抛格式错误**，必须先用 `parse_recipients` 拆分。
 - **完成项只来自 `git log`**（`web/daily_summary.py`），提示词（`web/session_prompts.py`）
   只用于总述/标签/下一步；未提交改动写成「未提交」。改总结口径先改这两个模块，别在 CLI 里拼字符串。
 - 提示词采集读 `~/.workbuddy/projects/<slug>` 与 `~/.claude/projects/<slug>` 的 jsonl；
