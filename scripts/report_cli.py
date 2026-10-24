@@ -2,8 +2,8 @@
 """在终端里生成并发送今日日报，不需要打开网页。
 
 默认流程：读取当天的 Git 提交、本地代码改动、AI 会话提示词与飞书消息，
-拼出一份日报草稿打印在终端；然后只问一次（回车发送 / 输入邮箱改发 / n 取消），
-确认后写入归档并发送邮件。
+拼出一份日报草稿打印在终端；然后只问一次（回车发送 / 输入邮箱改发 / e 编辑 / n 取消），
+确认后写入归档并发送邮件。选 e 可以就地增删改条目和投入工时。
 
 平时双击项目根目录的「发送日报.bat」即可，等价于下面第一条命令。
 
@@ -22,8 +22,10 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+SCRIPTS_DIR = Path(__file__).resolve().parent
+for candidate in (ROOT, SCRIPTS_DIR):
+    if str(candidate) not in sys.path:
+        sys.path.insert(0, str(candidate))
 
 from web import email_notifications  # noqa: E402
 from web.app import database_connection  # noqa: E402
@@ -33,6 +35,8 @@ from web.publisher_repo import (  # noqa: E402
     record_email_delivery,
     workload_series,
 )
+
+from report_editor import edit_report  # noqa: E402
 
 DEFAULT_DB = ROOT / "web" / "daily_report.db"
 DEFAULT_UPLOADS = ROOT / "uploads"
@@ -272,6 +276,8 @@ def ask_yes(prompt, default=True):
 
 
 CANCEL_WORDS = {"n", "no", "q", "quit", "取消", "不发", "退出"}
+EDIT_WORDS = {"e", "edit", "改", "编辑"}
+EDIT = "edit"
 RECIPIENT_SEPARATORS = re.compile(r"[,，;；\s]+")
 
 
@@ -285,26 +291,34 @@ def parse_recipients(text):
 
 
 def ask_send_target(recipients):
-    """一步确认：回车就发，改邮箱就重填，输入 n 取消。
+    """一步确认：回车发送 / 输入邮箱改发 / e 编辑草稿 / n 取消。
 
-    返回收件人列表；用户取消时返回 None。
+    返回收件人列表、EDIT 哨兵，或 None（用户取消）。
     """
     default_text = "、".join(recipients)
-    _out()
-    if default_text:
-        _out(f"  回车直接发送到 {default_text}")
-        _out("  想改收件人就输入邮箱（多个用逗号分隔），输入 n 取消")
-    else:
-        _out("  输入收件邮箱（多个用逗号分隔），输入 n 取消")
-    try:
-        raw = input("  > ").strip()
-    except EOFError:
-        raw = ""
-    if raw.lower() in CANCEL_WORDS:
-        return None
-    if not raw:
-        return list(recipients)
-    return parse_recipients(raw)
+    while True:
+        _out()
+        if default_text:
+            _out(f"  回车直接发送到 {default_text}")
+            _out("  输入其它邮箱改发 · e 先改一改 · n 取消")
+        else:
+            _out("  输入收件邮箱 · e 先改一改 · n 取消")
+        try:
+            raw = input("  > ").strip()
+        except EOFError:
+            raw = ""
+        lowered = raw.lower()
+        if lowered in CANCEL_WORDS:
+            return None
+        if lowered in EDIT_WORDS:
+            return EDIT
+        if not raw:
+            return list(recipients)
+        try:
+            return parse_recipients(raw)
+        except email_notifications.EmailNotificationError as error:
+            _out(f"  {error}")
+            _out("  请重新输入。")
 
 
 def save_item(connection, user, report, attachments, report_detail="标准"):
@@ -521,15 +535,27 @@ def main(argv=None):
     recipients = list(default_recipients)
     if args.to:
         recipients = parse_recipients(args.to)
-    elif not auto_send:
+
+    if auto_send:
         print_draft(report, signals, recipients, feishu_choice, user, sent_today)
-        chosen = ask_send_target(recipients)
-        if chosen is None:
-            _out("已取消，没有写入归档。")
-            return 0
-        recipients = chosen
     else:
-        print_draft(report, signals, recipients, feishu_choice, user, sent_today)
+        while True:
+            print_draft(report, signals, recipients, feishu_choice, user, sent_today)
+            chosen = ask_send_target(recipients)
+            if chosen is None:
+                _out("已取消，没有写入归档。")
+                return 0
+            if chosen == EDIT:
+                _out()
+                _out("  进入编辑：可以添加、修改、删除条目，或改投入工时。")
+                edit_report(report, writer=_out)
+                if not build_content(report):
+                    _out("  四段都空了，没有内容可发，已取消。")
+                    return 0
+                _out("  改完了，下面是更新后的草稿。")
+                continue
+            recipients = chosen
+            break
 
     if not recipients:
         raise SystemExit(

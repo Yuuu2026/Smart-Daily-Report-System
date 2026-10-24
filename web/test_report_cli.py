@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from scripts.report_cli import (
+    EDIT,
     ask_send_target,
     build_content,
     configured_recipients,
@@ -247,6 +248,17 @@ class SendTargetTests(unittest.TestCase):
         for word in ("n", "N", "取消", "不发"):
             with self.subTest(word=word):
                 self.assertIsNone(self._ask(word))
+
+    def test_e_enters_edit_mode(self):
+        for word in ("e", "E", "编辑"):
+            with self.subTest(word=word):
+                self.assertEqual(self._ask(word), EDIT)
+
+    def test_invalid_email_asks_again(self):
+        with patch("builtins.input", side_effect=["bad-address", "ok@x.com"]), patch(
+            "sys.stdout", new_callable=io.StringIO
+        ):
+            self.assertEqual(ask_send_target(["me@qq.com"]), ["ok@x.com"])
 
     def test_empty_default_and_empty_input_returns_empty(self):
         self.assertEqual(self._ask("", recipients=()), [])
