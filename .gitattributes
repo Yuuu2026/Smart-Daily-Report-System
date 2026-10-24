@@ -1,0 +1,2 @@
+# Git 钩子脚本必须保持 LF，否则 sh 会把 shebang 读成 #!/bin/sh\r 而拒绝执行。
+scripts/git-hooks/* text eol=lf
