@@ -1,10 +1,12 @@
-"""在发送前编辑日报草稿：添加、修改、删除条目，或改投入工时。
+"""在发送前编辑日报草稿：报个编号就改，顺带支持新增、删除、改投入工时。
 
 草稿在 report 字典里是「- 一行一条」的字符串。这里拆成列表来编辑，改完再拼回去，
 保证写进 published_items 的正文和网页发布完全一致。
 
 只改真正会发出去的内容：四段正文 + 投入工时。总述和标签是终端里的提示信息，
-不参与发送，所以不放在编辑菜单里，免得改了以为生效。
+不参与发送，所以不在编辑范围里，免得改了以为生效。
+
+交互只有两层：问「改哪一条」→ 问「改成什么」。不再先让用户选 m，再报编号。
 """
 
 SECTIONS = (
@@ -18,11 +20,10 @@ SECTION_LABELS = {key: label for key, label in SECTIONS}
 SECTION_BY_NUMBER = {str(index + 1): key for index, (key, _) in enumerate(SECTIONS)}
 MAX_HOURS = 24
 ADD_KEYWORDS = {"a", "add", "加", "添加"}
-EDIT_KEYWORDS = {"m", "modify", "edit", "改", "修改"}
 REMOVE_KEYWORDS = {"d", "delete", "remove", "删", "删除"}
 HOURS_KEYWORDS = {"h", "hour", "hours", "工时"}
 PREVIEW_KEYWORDS = {"p", "preview", "看", "预览"}
-DONE_KEYWORDS = {"", "q", "quit", "完成", "ok"}
+DONE_KEYWORDS = {"", "q", "quit", "完成", "返回", "ok"}
 
 
 def split_items(text):
@@ -59,7 +60,7 @@ def apply_items(report, items):
 
 
 def format_items(report):
-    """带全局编号的清单：编号跨段连续，编辑时直接报数字。"""
+    """带全局编号的清单：按段落分组，编号跨段连续。"""
     lines = []
     number = 0
     for key, label in SECTIONS:
@@ -72,6 +73,16 @@ def format_items(report):
             lines.append(f"    {number}. {item}")
     if not number:
         lines.append("  （四段都还是空的）")
+    return "\n".join(lines)
+
+
+def format_numbered(report):
+    """一条一行、前面标段落，改的时候直接报编号。"""
+    lines = []
+    for number, (key, item) in enumerate(collect_items(report), start=1):
+        lines.append(f"    {number}. [{SECTION_LABELS[key]}] {item}")
+    if not lines:
+        lines.append("    （还没有任何条目，用 a 新增一条）")
     return "\n".join(lines)
 
 
@@ -119,38 +130,25 @@ def _ask_index(items, reader, say):
 def _add(report, items, reader, say):
     key = _ask_section(reader, say)
     if key is None:
-        return
+        return False
     text = reader("  内容：").strip()
     if not text:
         say("  没有输入内容，已跳过。")
-        return
+        return False
     items.append((key, text))
     apply_items(report, items)
-    say(f"  已添加到「{SECTION_LABELS[key]}」。")
-
-
-def _modify(report, items, reader, say):
-    index = _ask_index(items, reader, say)
-    if index is None:
-        return
-    key, current = items[index]
-    say(f"  当前：{current}")
-    text = reader("  改成（回车保留原文）：").strip()
-    if not text or text == current:
-        say("  没有变化。")
-        return
-    items[index] = (key, text)
-    apply_items(report, items)
-    say("  已更新。")
+    say(f"  已添加到「{SECTION_LABELS[key]}」：{text}")
+    return True
 
 
 def _remove(report, items, reader, say):
     index = _ask_index(items, reader, say)
     if index is None:
-        return
+        return False
     key, text = items.pop(index)
     apply_items(report, items)
     say(f"  已从「{SECTION_LABELS[key]}」删除：{text}")
+    return True
 
 
 def _edit_hours(report, reader, say):
@@ -158,23 +156,44 @@ def _edit_hours(report, reader, say):
     say(f"  当前工时：{current or '（未填）'}")
     raw = reader("  新的工时（小时，回车保留，输入 - 清空）：").strip()
     if not raw:
-        return
+        return False
     if raw == "-":
         report["hours"] = ""
         say("  已清空工时。")
-        return
+        return True
     try:
         report["hours"] = parse_hours(raw)
     except ValueError as error:
         say(f"  {error}")
-        return
+        return False
     say(f"  工时已改成 {report['hours']} 小时。")
+    return True
 
 
-def edit_report(report, reader=None, writer=None):
-    """交互式编辑草稿，直接改 report 并返回它。
+def _replace(report, items, raw, reader, say):
+    """按编号改写一条：先确认改哪里，再问改成什么。"""
+    index = int(raw) - 1
+    if index < 0 or index >= len(items):
+        say("  没有这个编号，已跳过。")
+        return False
+    key, current = items[index]
+    say(f"  当前（{SECTION_LABELS[key]}）：{current}")
+    text = reader("  改成（回车保留原文）：").strip()
+    if not text or text == current:
+        say("  没有变化。")
+        return False
+    items[index] = (key, text)
+    apply_items(report, items)
+    say(f"  已更新「{SECTION_LABELS[key]}」：{text}")
+    return True
 
+
+def edit_one(report, reader=None, writer=None):
+    """改一处就返回：问「改哪一条」→ 问「改成什么」。
+
+    直接输入编号就是修改；也可以输入 a 新增、d 删除、h 改工时、p 看全文。
     reader / writer 可注入，方便测试；默认用 input / print。
+    返回 True 表示草稿确实变了。
     """
     reader = reader or input
     writer = writer or print
@@ -184,27 +203,25 @@ def edit_report(report, reader=None, writer=None):
 
     items = collect_items(report)
     say()
-    say("  当前草稿（编号跨段通用，改完按 q 回到发送）")
-    say(format_items(report))
+    say("  改哪一条？直接输编号就是修改")
+    say(format_numbered(report))
+    say("  a 新增 · d 删除 · h 改工时 · p 看全文 · 回车返回")
+    raw = reader("  > ").strip()
+    lowered = raw.lower()
 
-    while True:
+    if lowered in DONE_KEYWORDS:
+        return False
+    if lowered in ADD_KEYWORDS:
+        return _add(report, items, reader, say)
+    if lowered in REMOVE_KEYWORDS:
+        return _remove(report, items, reader, say)
+    if lowered in HOURS_KEYWORDS:
+        return _edit_hours(report, reader, say)
+    if lowered in PREVIEW_KEYWORDS:
         say()
-        say("  a 添加   m 修改   d 删除   h 改工时   p 看全部   q 完成并返回")
-        command = reader("  > ").strip().lower()
-
-        if command in DONE_KEYWORDS:
-            break
-        if command in ADD_KEYWORDS:
-            _add(report, items, reader, say)
-        elif command in EDIT_KEYWORDS:
-            _modify(report, items, reader, say)
-        elif command in REMOVE_KEYWORDS:
-            _remove(report, items, reader, say)
-        elif command in HOURS_KEYWORDS:
-            _edit_hours(report, reader, say)
-        elif command in PREVIEW_KEYWORDS:
-            say()
-            say(format_items(report))
-        else:
-            say("  只认 a / m / d / h / p / q 这几个键。")
-    return report
+        say(format_items(report))
+        return False
+    if not raw.isdigit():
+        say("  输入编号（例如 2）才能改，或 a / d / h / p，回车返回。")
+        return False
+    return _replace(report, items, raw, reader, say)
