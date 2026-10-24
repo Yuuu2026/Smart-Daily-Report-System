@@ -14,6 +14,10 @@
   同一个 token 打 API 仍 200），现在用 Basic 头：
   `AUTH=$(printf "Yuuu2026:%s" "$TOKEN" | base64 -w0)`，
   `git -c credential.helper="" -c http.https://github.com.proxy=http://127.0.0.1:7897 -c http.extraHeader="Authorization: Basic $AUTH" push https://github.com/Yuuu2026/Smart-Daily-Report-System.git master`。
+  **`git credential fill` 会卡死**（GCM 等弹窗，timeout 124，`GCM_INTERACTIVE=never` 报
+  `could not read Username`）。改用 Python ctypes 读 Windows 凭据管理器：
+  target `git:https://github.com`（Generic），`advapi32.CredReadW` 拿 `CREDENTIAL`，
+  `CredentialBlob` 按 `CredentialBlobSize/2` 解 UTF-16 就是 40 字符 token；用完删临时文件。
   `curl` 直连 github 返回 000 是没走代理，加 `-x http://127.0.0.1:7897` 才是真实连通性。
 - CI：`.github/workflows/ci.yml`，push/PR 到 main|master 时在 ubuntu-latest + Python 3.12 上跑
   `python -m unittest discover -v`，真实发现 40 个测试。公开仓库 Actions 免费无限额度。
