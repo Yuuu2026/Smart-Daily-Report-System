@@ -38,14 +38,20 @@ class CleanTextTests(unittest.TestCase):
 
 class SlugTests(unittest.TestCase):
     def test_workbuddy_slug_keeps_chinese(self):
-        slug = workbuddy_slug("C:/Users/Lenovo/Desktop/研一作业/智能日报系统设计")
-        self.assertTrue(slug.startswith("c-Users-Lenovo-Desktop-"))
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "智能日报系统设计"
+            root.mkdir()
+            slug = workbuddy_slug(root)
         self.assertIn("智能日报系统设计", slug)
+        self.assertNotIn(":", slug)
 
     def test_claude_slug_masks_chinese(self):
-        slug = claude_slug("C:/Users/Lenovo/Desktop/研一作业/智能日报系统设计")
-        self.assertTrue(slug.startswith("c--Users-Lenovo-Desktop-"))
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "智能日报系统设计"
+            root.mkdir()
+            slug = claude_slug(root)
         self.assertNotIn("智能", slug)
+        self.assertIn("---", slug)
 
 
 class CollectTests(unittest.TestCase):
